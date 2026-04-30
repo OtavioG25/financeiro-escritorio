@@ -155,7 +155,7 @@ table{width:100%;border-collapse:collapse}
 .cls:hover{background:var(--s2);color:var(--tx)}
 .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:18px 22px}
 .fl{font-size:11.5px;color:var(--tx2);font-weight:500;margin-bottom:4px}
-input[type=text],input[type=number],input[type=date],select,textarea{background:var(--s2);border:1px solid var(--bd2);border-radius:8px;color:var(--tx);padding:7px 10px;font-size:13px;outline:none;transition:border-color .12s;width:100%}
+input[type=text],input[type=number],input[type=date],input[type=month],select,textarea{background:var(--s2);border:1px solid var(--bd2);border-radius:8px;color:var(--tx);padding:7px 10px;font-size:13px;outline:none;transition:border-color .12s;width:100%}
 input:focus,select:focus,textarea:focus{border-color:var(--blue)}
 input::placeholder{color:var(--tx3)}
 .ro{color:var(--tx2)!important;cursor:default}
@@ -174,25 +174,10 @@ input::placeholder{color:var(--tx3)}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--s3);border-radius:3px}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
-<div id="login-screen">
-  <div class="login-box">
-    <div class="login-ico">₢</div>
-    <div class="login-title">Financeiro Escritório</div>
-    <div class="login-sub">Digite a senha para continuar<br><span id="login-ver" style="font-size:11px;color:var(--tx3)"></span></div>
-    <div class="login-field">
-      <input type="password" id="login-inp" placeholder="Senha" onkeydown="if(event.key==='Enter')doLogin()"/>
-    </div>
-    <button class="login-btn" onclick="doLogin()">🔓 Entrar</button>
-    <div class="login-err" id="login-err"></div>
-  </div>
-</div>
-<div id="loading-screen" style="display:none">
-  <div class="spinner"></div>
-  <div style="color:var(--tx2);font-size:13px">Carregando dados...</div>
-</div>
-<div id="app" style="display:none">
+<div id="app">
   <aside id="sidebar">
     <div class="brand">
       <div class="brand-ico">₢</div>
@@ -221,30 +206,15 @@ input::placeholder{color:var(--tx3)}
 <script>
 const APP_VERSION = 'v1.8.0';
 const APP_DATE = '2026-04-30';
-const SENHA = 'skala2025'; // ← altere aqui para sua senha
 
-// Preenche versão na tela de login
+// Preenche versão na tela
 document.addEventListener('DOMContentLoaded',()=>{
-  const lv=document.getElementById('login-ver');
-  if(lv) lv.textContent=`${APP_VERSION} · ${APP_DATE}`;
+  const verEl=document.getElementById('app-ver');
+  if(verEl) verEl.textContent=APP_VERSION;
+  startApp();
 });
 
-function doLogin(){
-  const val=document.getElementById('login-inp').value;
-  if(val===SENHA){
-    document.getElementById('login-screen').style.display='none';
-    document.getElementById('loading-screen').style.display='flex';
-    const verEl=document.getElementById('app-ver');
-    if(verEl) verEl.textContent=APP_VERSION;
-    startApp();
-  } else {
-    const err=document.getElementById('login-err');
-    err.textContent='Senha incorreta. Tente novamente.';
-    document.getElementById('login-inp').value='';
-    document.getElementById('login-inp').focus();
-    setTimeout(()=>err.textContent='',3000);
-  }
-}
+
 
 const SUPABASE_URL='https://rvymfrpugzwwgrcybwpk.supabase.co';
 const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ2eW1mcnB1Z3p3d2dyY3lid3BrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0ODgzNTUsImV4cCI6MjA5MzA2NDM1NX0.kgWgFOlD53kclwB62GPOHbQh55Ypxp6rjGhYCmvs-Us';
@@ -332,7 +302,7 @@ function isRecFinCat(nome){
 function calcDRE(year){
   const despCats=getDespCats();
   const recCats=getRecCats();
-  const base={ded:0,totRec:0,totDesp:0,ebitda:0,ll:0,
+  const base={totRec:0,totDesp:0,ebitda:0,ll:0,
     // Totalizadores intermediários do modelo Skala
     recOpBruta:0, impostos:0, custosOp:0, recOpLiq:0,
     cusPessoal:0, lucOpBruto:0, despOp:0, resOp:0,
@@ -369,7 +339,6 @@ function calcDRE(year){
         if(sub){ const sk='ds_'+(sub.slug||slugify(sub.nome)); m[i][sk]=(m[i][sk]||0)+v; }
       }
     }
-    m[i].ded+=parseFloat(l.ded)||0;
   });
 
   m.forEach(r=>{
@@ -382,7 +351,7 @@ function calcDRE(year){
     // Impostos e Custos Operacionais
     r.impostos   = r['d_impostos']||0;
     r.custosOp   = r['d_custos_operacionais']||0;
-    r.recOpLiq   = r.recOpBruta - r.impostos - r.custosOp - r.ded;
+    r.recOpLiq   = r.recOpBruta - r.impostos - r.custosOp;
     // Custo pessoal
     r.cusPessoal = (r['d_pro_labores']||0)+(r['d_empregados']||0)+(r['d_recrutamento']||0);
     r.lucOpBruto = r.recOpLiq - r.cusPessoal;
@@ -436,17 +405,65 @@ function calcFluxo(year){
 
 const FORMAS=['PIX','TED','Boleto','Cartão Crédito','Cartão Débito','Dinheiro','Cheque'];
 const STATUS=['Pago','Recebido','Pendente','Cancelado'];
-const CONTAS=['Conta Corrente','Conta Poupança','Caixa','Outro'];
+let CONTAS=['Conta Corrente','Conta Poupança','Caixa','Outro'];
+const CONTAS_KEY='financeiro_contas';
 const MONTHS=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 const fmt=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(parseFloat(v)||0);
 const fmtPct=v=>`${((parseFloat(v)||0)*100).toFixed(1)}%`;
 const getM=d=>d?parseInt(d.split('-')[1],10)-1:null;
 const getY=d=>d?parseInt(d.split('-')[0],10):null;
+function loadContas(){
+  try{
+    const stored=localStorage.getItem(CONTAS_KEY);
+    if(stored){
+      const parsed=JSON.parse(stored);
+      if(Array.isArray(parsed)&&parsed.length)CONTAS=parsed;
+    }
+  }catch(e){console.warn('Falha ao carregar contas',e);}
+}
+function saveContas(){
+  try{localStorage.setItem(CONTAS_KEY,JSON.stringify(CONTAS));}catch(e){console.warn('Falha ao salvar contas',e);}
+}
+function compToView(v){
+  if(!v)return'';
+  if(/^\d{4}-\d{2}$/.test(v))return`${v.slice(5)}/${v.slice(0,4)}`;
+  if(/^\d{4}-\d{2}-\d{2}$/.test(v))return`${v.slice(5,7)}/${v.slice(0,4)}`;
+  if(/^\d{2}\/\d{4}$/.test(v))return v;
+  return v;
+}
+function compDisplay(v){
+  if(!v)return'';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(v))return v.slice(0,7);
+  if(/^\d{4}-\d{2}$/.test(v))return v;
+  return v;
+}
+function compFromView(v){
+  if(!v)return null;
+  const digits=String(v||'').replace(/\D/g,'');
+  if(digits.length===6){
+    const mm=String(digits.slice(0,2)).padStart(2,'0');
+    const yyyy=digits.slice(2);
+    return `${yyyy}-${mm}-01`;
+  }
+  const m=String(v||'').trim().match(/^(\d{1,2})\/(\d{4})$/);
+  if(!m)return null;
+  const mm=String(m[1]).padStart(2,'0');
+  return `${m[2]}-${mm}-01`;
+}
+function formatCompInput(v){
+  const digits=String(v||'').replace(/\D/g,'');
+  if(!digits)return '';
+  if(digits.length<=2) return digits;
+  const mm=digits.slice(0,2);
+  const yy=digits.slice(2,6);
+  return yy?`${mm}/${yy}`:mm;
+}
 
 let TAB='dashboard',YEAR=new Date().getFullYear(),editingId=null;
-const TABS=[{id:'dashboard',lbl:'Dashboard',ico:'📊'},{id:'lancamentos',lbl:'Lançamentos',ico:'📋'},{id:'dre',lbl:'DRE',ico:'📈'},{id:'fluxo',lbl:'Fluxo de Caixa',ico:'💰'},{id:'pendentes',lbl:'Pendentes',ico:'⏳'},{id:'recorrentes',lbl:'Recorrentes',ico:'🔁'},{id:'categorias',lbl:'Categorias',ico:'⚙️'}];
+const TABS=[{id:'dashboard',lbl:'Dashboard',ico:'📊'},{id:'lancamentos',lbl:'Lançamentos',ico:'📋'},{id:'dre',lbl:'DRE',ico:'📈'},{id:'fluxo',lbl:'Fluxo de Caixa',ico:'💰'},{id:'pendentes',lbl:'Pendentes',ico:'⏳'},{id:'recorrentes',lbl:'Recorrentes',ico:'🔁'},{id:'categorias',lbl:'Categorias',ico:'⚙️'},{id:'contas',lbl:'Contas',ico:'🏦'},{id:'import',lbl:'Importar',ico:'📥'}];
 
 async function init(){
+  loadContas();
   const ys=document.getElementById('yr-sel');
   for(let y=YEAR-1;y<=YEAR+1;y++){const o=document.createElement('option');o.value=y;o.textContent=y;if(y===YEAR)o.selected=true;ys.appendChild(o);}
   try{
@@ -470,7 +487,6 @@ async function init(){
     console.error(e);setSyncStatus('err','Erro de conexão');
     toast('Erro ao conectar: '+e.message,'err');
   }
-  document.getElementById('loading-screen').style.display='none';
   document.getElementById('app').style.display='flex';
   buildNav();render();
 }
@@ -529,6 +545,8 @@ function render(){
   else if(TAB==='pendentes')renderPendentes(c);
   else if(TAB==='recorrentes')renderRecorrentes(c);
   else if(TAB==='categorias')renderCategorias(c);
+  else if(TAB==='contas')renderContas(c);
+  else if(TAB==='import')renderImport(c);
 }
 
 function renderDashboard(c){
@@ -700,7 +718,6 @@ function renderDRE(c){
 
         ${row('IMPOSTOS','','sep')}
         ${g(impostoCat,'D')}
-        ${row('(–) Deduções sobre Receita','ded','sub')}
         ${row('CUSTOS OPERACIONAIS','','sep')}
         ${g(custosOpCat,'D')}
         ${row('(=) RECEITA OPERACIONAL LÍQUIDA','recOpLiq','result')}
@@ -858,7 +875,7 @@ function renderLancamentos(c){
   const tb=document.getElementById('lan-tbody');
   if(!filtered.length){tb.innerHTML=`<tr><td colspan="10" class="empty-row">Nenhum lançamento encontrado</td></tr>`;return;}
   tb.innerHTML=filtered.map(l=>`<tr class="lr">
-    <td>${l.dataComp||'—'}</td><td>${l.dataPgto||'—'}</td>
+    <td>${compDisplay(l.dataComp)||'—'}</td><td>${l.dataPgto||'—'}</td>
     <td><span class="tp ${l.tipo==='R'?'r':'d'}">${l.tipo==='R'?'▲ Rec':'▼ Desp'}</span></td>
     <td><span class="ct">${esc(l.cat)}</span><br><span class="cs">${esc(l.sub)}</span></td>
     <td class="dc">${esc(l.desc||'—')}</td>
@@ -912,6 +929,7 @@ function renderPendentes(c){
             <input type="date" id="lote-data" value="${hoje}" style="background:var(--s2);border:1px solid var(--bd2);border-radius:8px;color:var(--tx);padding:6px 10px;font-size:13px;outline:none"/>
           </div>
           <button class="btn btn-pri" id="lote-btn" onclick="baixarEmLote()" style="display:none">✓ Baixar selecionados</button>
+          <button class="btn" id="lote-del-btn" onclick="deletarEmLote()" style="display:none;background:rgba(248,81,73,.1);color:var(--red);border:1px solid rgba(248,81,73,.2);font-size:12px">🗑️ Excluir selecionados</button>
           <span id="lote-count" style="font-size:12px;color:var(--tx2)"></span>
         </div>
       </div>
@@ -937,7 +955,10 @@ function renderPendentes(c){
             <td class="dc">${esc(l.desc||'—')}</td>
             <td class="vc ${l.tipo==='R'?'r':'d'}">${fmt(l.valorLiq)}</td>
             <td>${badge(l.status)}</td>
-            <td><button class="btn btn-ghost" style="padding:4px 8px;font-size:12px" onclick="openEdit('${l.id}')">✏️</button></td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-ghost" style="padding:4px 8px;font-size:12px" onclick="openEdit('${l.id}')">✏️</button>
+              <button class="btn" style="padding:4px 8px;font-size:12px;background:rgba(248,81,73,.1);color:var(--red);border:1px solid rgba(248,81,73,.2)" onclick="deleteItem('${l.id}')">🗑️</button>
+            </td>
           </tr>`).join('')}
       </tbody>
     </table></div></div>`;
@@ -946,10 +967,12 @@ function renderPendentes(c){
 function onPendCheck(){
   const chks=[...document.querySelectorAll('.pend-chk:checked')];
   const btn=document.getElementById('lote-btn');
+  const delBtn=document.getElementById('lote-del-btn');
   const cnt=document.getElementById('lote-count');
   const selAll=document.getElementById('sel-all');
   const total=document.querySelectorAll('.pend-chk').length;
   if(btn){btn.style.display=chks.length>0?'inline-flex':'none';}
+  if(delBtn){delBtn.style.display=chks.length>0?'inline-flex':'none';}
   if(cnt){
     if(chks.length>0){
       const ids=chks.map(c=>c.value);
@@ -1001,37 +1024,106 @@ async function baixarEmLote(){
   toast(`✓ ${ok} baixado(s)${err?` — ${err} erro(s)`:''}!`,'ok');
 }
 
+async function deletarEmLote(){
+  const chks=[...document.querySelectorAll('.pend-chk:checked')];
+  if(!chks.length){toast('Selecione pelo menos um lançamento','err');return;}
+  const ids=chks.map(c=>c.value);
+  const items=DATA.filter(l=>ids.includes(l.id));
+  const tot=items.reduce((s,l)=>s+(parseFloat(l.valorLiq)||0),0);
+  if(!confirm(`Excluir ${items.length} lançamento(s) pendente(s) totalizando ${fmt(tot)}?`))return;
+
+  setSyncStatus('loading',`Excluindo ${items.length}...`);
+  let ok=0,err=0;
+  for(const item of items){
+    try{
+      await dbDelete(item.id);
+      ok++;
+    }catch(e){err++;console.error(e);}
+  }
+  DATA=DATA.filter(l=>!ids.includes(l.id));
+  setSyncStatus('ok',`${DATA.length} registros`);
+  buildNav();render();
+  toast(`✓ ${ok} excluído(s)${err?` — ${err} erro(s)`:''}!`,'err');
+}
+
 let formData={};
-function openForm(id=null){editingId=id;const l=id?DATA.find(x=>x.id===id):null;formData=l?{...l}:{id:newId(),tipo:'R',dataComp:'',dataPgto:'',cat:'',sub:'',desc:'',cc:'',forma:'PIX',conta:'Conta Corrente',doc:'',valorBruto:'',ded:'',valorLiq:'',status:'Pendente',obs:''};document.getElementById('modal-ttl').textContent=id?'Editar Lançamento':'Novo Lançamento';buildForm();document.getElementById('overlay').style.display='flex';}
+function openForm(id=null){
+  editingId=id;
+  const l=id?DATA.find(x=>x.id===id):null;
+  if(l){
+    formData={...l};
+    formData.dataCompView = compToView(l.dataComp || l.dataCompView || '');
+  } else {
+    formData={id:newId(),tipo:'R',dataComp:'',dataCompView:'',dataPgto:'',cat:'',sub:'',desc:'',cc:'',forma:'PIX',conta:'Conta Corrente',doc:'',valorBruto:'',ded:'',valorLiq:'',status:'Pendente',obs:''};
+  }
+  document.getElementById('modal-ttl').textContent=id?'Editar Lançamento':'Novo Lançamento';
+  buildForm();
+  document.getElementById('overlay').style.display='flex';
+}
 function openEdit(id){openForm(id);}
 function closeForm(){document.getElementById('overlay').style.display='none';}
 
+function renderContas(c){
+  c.innerHTML=`
+    <div class="card" style="padding:18px 20px">
+      <div class="card-ttl">Contas Bancárias</div>
+      <div style="margin-top:12px;display:grid;gap:10px" id="accounts-list">
+        ${CONTAS.map((conta,idx)=>`
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:1px solid var(--bd);border-radius:12px;background:var(--s2)">
+            <span>${esc(conta)}</span>
+            <button class="btn" style="padding:4px 8px;font-size:12px;background:rgba(248,81,73,.1);color:var(--red);border:1px solid rgba(248,81,73,.2)" onclick="removerConta(${idx})">Remover</button>
+          </div>`).join('')}
+      </div>
+      <button class="btn btn-pri" style="margin-top:16px" onclick="adicionarConta()">＋ Nova Conta</button>
+    </div>
+  `;
+}
+
+function adicionarConta(){
+  const nome=prompt('Nome da nova conta bancária:');
+  if(!nome||!nome.trim())return;
+  const n=nome.trim();
+  if(CONTAS.includes(n)){toast('Conta já existe!','err');return;}
+  CONTAS.push(n);
+  saveContas();
+  render();toast(`Conta "${n}" adicionada!`,'ok');
+}
+
+function removerConta(idx){
+  const nome=CONTAS[idx];
+  if(!nome||!confirm(`Remover conta "${nome}"?`))return;
+  CONTAS.splice(idx,1);
+  saveContas();
+  render();toast(`Conta "${nome}" removida.`,'err');
+}
+
 function buildForm(){
   const g=document.getElementById('fgrid'),cats=Object.keys(CATS[formData.tipo]||{}),subs=(CATS[formData.tipo]?.[formData.cat])||[];
+  if(!['Recebido','Pendente','Pago'].includes(formData.status)){
+    formData.status = formData.tipo==='R' ? 'Recebido' : 'Pago';
+  }
   g.innerHTML=`<div style="grid-column:span 2"><div class="fl">Tipo</div><div class="tt"><button type="button" class="tb ${formData.tipo==='R'?'ar':''}" onclick="setFormTipo('R')">▲ Receita / Entrada</button><button type="button" class="tb ${formData.tipo==='D'?'ad':''}" onclick="setFormTipo('D')">▼ Despesa / Saída</button></div></div>
-    <div><div class="fl">Data Competência *</div><input type="date" value="${formData.dataComp}" onchange="formData.dataComp=this.value" required/></div>
+    <div><div class="fl">Competência *</div><input type="text" placeholder="MM/AAAA" value="${formData.dataCompView||''}" oninput="formData.dataCompView=formatCompInput(this.value)" required/></div>
     <div><div class="fl">Data Pagamento</div><input type="date" value="${formData.dataPgto}" onchange="formData.dataPgto=this.value"/></div>
     <div><div class="fl">Categoria *</div><select onchange="formData.cat=this.value;formData.sub='';buildForm()"><option value="">Selecione...</option>${cats.map(c=>`<option value="${c}"${formData.cat===c?' selected':''}>${c}</option>`).join('')}</select></div>
     <div><div class="fl">Subcategoria</div><select onchange="formData.sub=this.value"><option value="">Selecione...</option>${subs.map(s=>`<option value="${s}"${formData.sub===s?' selected':''}>${s}</option>`).join('')}</select></div>
     <div style="grid-column:span 2"><div class="fl">Descrição / Cliente / Fornecedor</div><input type="text" value="${esc(formData.desc)}" oninput="formData.desc=this.value" placeholder="Ex: Honorários — Empresa XYZ"/></div>
-    <div><div class="fl">Valor Bruto (R$) *</div><input type="number" step="0.01" min="0" value="${formData.valorBruto}" oninput="formData.valorBruto=this.value;calcVL()" placeholder="0,00" required/></div>
-    <div><div class="fl">Impostos / Deduções (R$)</div><input type="number" step="0.01" min="0" value="${formData.ded}" oninput="formData.ded=this.value;calcVL()" placeholder="0,00"/></div>
-    <div><div class="fl">Valor Líquido (R$)</div><input type="number" step="0.01" value="${formData.valorLiq}" class="ro" readonly id="vl-inp" placeholder="Calculado automaticamente"/></div>
-    <div><div class="fl">Status</div><select onchange="formData.status=this.value">${STATUS.map(s=>`<option value="${s}"${formData.status===s?' selected':''}>${s}</option>`).join('')}</select></div>
-    <div><div class="fl">Forma de Pagamento</div><select onchange="formData.forma=this.value">${FORMAS.map(f=>`<option value="${f}"${formData.forma===f?' selected':''}>${f}</option>`).join('')}</select></div>
+    <div><div class="fl">Valor (R$) *</div><input type="number" step="0.01" min="0" value="${formData.valorBruto}" oninput="formData.valorBruto=this.value" placeholder="0,00" required/></div>
+    <div><div class="fl">Status</div><select onchange="formData.status=this.value">${(formData.tipo==='R'?['Recebido','Pendente']:['Pago','Pendente']).map(s=>`<option value="${s}"${formData.status===s?' selected':''}>${s}</option>`).join('')}</select></div>
     <div><div class="fl">Conta Bancária</div><select onchange="formData.conta=this.value">${CONTAS.map(c=>`<option value="${c}"${formData.conta===c?' selected':''}>${c}</option>`).join('')}</select></div>
     <div><div class="fl">Nº Doc / NF</div><input type="text" value="${esc(formData.doc)}" oninput="formData.doc=this.value"/></div>
-    <div><div class="fl">Centro de Custo</div><input type="text" value="${esc(formData.cc)}" oninput="formData.cc=this.value"/></div>
     <div style="grid-column:span 2"><div class="fl">Observações</div><textarea rows="2" oninput="formData.obs=this.value">${esc(formData.obs)}</textarea></div>
     <div style="grid-column:span 2" class="fa"><button class="btn btn-ghost" onclick="closeForm()">Cancelar</button><button class="btn btn-pri" id="save-btn" onclick="saveForm()">💾 Salvar Lançamento</button></div>`;
 }
 
 function setFormTipo(t){formData.tipo=t;formData.cat='';formData.sub='';buildForm();}
-function calcVL(){const b=parseFloat(formData.valorBruto)||0,d=parseFloat(formData.ded)||0;formData.valorLiq=(b-d).toFixed(2);const inp=document.getElementById('vl-inp');if(inp)inp.value=formData.valorLiq;}
 
 async function saveForm(){
-  if(!formData.dataComp||!formData.cat||!formData.valorBruto){toast('Preencha os campos obrigatórios (*)','err');return;}
-  if(!formData.valorLiq)formData.valorLiq=formData.valorBruto;
+  const canonicalComp = compFromView(formData.dataCompView);
+  if(!canonicalComp||!formData.cat||!formData.valorBruto){toast('Preencha os campos obrigatórios (*) e use MM/AAAA em Competência.','err');return;}
+  formData.dataComp = canonicalComp;
+  formData.valorLiq = parseFloat(formData.valorBruto)||0;
+  if(!formData.ded) formData.ded = 0;
   const btn=document.getElementById('save-btn');if(btn){btn.disabled=true;btn.textContent='Salvando...';}
   setSyncStatus('loading','Salvando...');
   try{
@@ -1047,6 +1139,36 @@ async function deleteItem(id){
   setSyncStatus('loading','Excluindo...');
   try{await dbDelete(id);DATA=DATA.filter(x=>x.id!==id);setSyncStatus('ok',`${DATA.length} registros`);buildNav();render();toast('Lançamento excluído.','err');}
   catch(e){setSyncStatus('err','Erro ao excluir');toast('Erro ao excluir: '+e.message,'err');}
+}
+
+let recData={};
+function openEditRecorrente(tipo,id){
+  const arr=tipo==='R'?RECORRENTES_RECEITAS:RECORRENTES_DESPESAS;
+  const item=arr.find(r=>r.id===id)||{id:newId(),desc:'',cat:'',sub:'',valor:0,dataVenc:''};
+  recData={...item,tipo};
+  document.getElementById('modal-ttl').textContent=`Editar ${tipo==='R'?'Receita':'Despesa'} Recorrente`;
+  buildFormRecorrente();
+  document.getElementById('overlay').style.display='flex';
+}
+
+function buildFormRecorrente(){
+  const cats=Object.keys(CATS[recData.tipo]||{});
+  const subs=(CATS[recData.tipo]?.[recData.cat])||[];
+  document.getElementById('fgrid').innerHTML=`
+    <div style="grid-column:span 2"><div class="fl">Descrição *</div><input type="text" value="${esc(recData.desc)}" oninput="recData.desc=this.value"/></div>
+    <div><div class="fl">Categoria *</div><select onchange="recData.cat=this.value;recData.sub='';buildFormRecorrente()">${cats.map(c=>`<option value="${c}"${recData.cat===c?' selected':''}>${c}</option>`).join('')}</select></div>
+    <div><div class="fl">Subcategoria</div><select onchange="recData.sub=this.value">${subs.map(s=>`<option value="${s}"${recData.sub===s?' selected':''}>${s}</option>`).join('')}</select></div>
+    <div><div class="fl">Valor (R$) *</div><input type="number" step="0.01" min="0" value="${recData.valor}" oninput="recData.valor=parseFloat(this.value)||0"/></div>
+    <div><div class="fl">Data de Vencimento</div><input type="date" value="${recData.dataVenc}" onchange="recData.dataVenc=this.value"/></div>
+    <div style="grid-column:span 2" class="fa"><button class="btn btn-ghost" onclick="closeForm()">Cancelar</button><button class="btn btn-pri" onclick="saveRecorrente()">💾 Salvar</button></div>`;
+}
+
+async function saveRecorrente(){
+  if(!recData.desc||!recData.cat||!recData.valor){toast('Preencha os campos obrigatórios (*)','err');return;}
+  const arr=recData.tipo==='R'?RECORRENTES_RECEITAS:RECORRENTES_DESPESAS;
+  const idx=arr.findIndex(r=>r.id===recData.id);
+  if(idx>=0)arr[idx]={...recData};else arr.push({...recData});
+  closeForm();render();toast('Recorrente salvo! ✓','ok');
 }
 
 // ── Recorrentes Data ──────────────────────────────────────────────
@@ -1263,15 +1385,15 @@ function renderRecorrentes(c){
       <div class="tbl-wrap">
         <div class="tbl-hdr"><div class="sec-ttl">▲ Receitas Recorrentes <span class="yr-pill">${RECORRENTES_RECEITAS.length} clientes</span></div></div>
         <div style="max-height:420px;overflow-y:auto"><table class="lan-tbl" style="min-width:unset">
-          <thead><tr><th>Cliente</th><th>Serviço</th><th style="text-align:right">Valor</th></tr></thead>
-          <tbody>${RECORRENTES_RECEITAS.map(r=>`<tr class="lr"><td style="font-size:12px;color:var(--tx)">${esc(r.desc)}</td><td><span class="cs">${esc(r.sub)}</span></td><td style="text-align:right" class="vc r">${fmt(r.valor)}</td></tr>`).join('')}</tbody>
+          <thead><tr><th>Cliente</th><th>Serviço</th><th style="text-align:right">Valor</th><th>Data Venc.</th><th></th></tr></thead>
+          <tbody>${RECORRENTES_RECEITAS.map(r=>`<tr class="lr"><td style="font-size:12px;color:var(--tx)">${esc(r.desc)}</td><td><span class="cs">${esc(r.sub)}</span></td><td style="text-align:right" class="vc r">${fmt(r.valor)}</td><td>${r.dataVenc||'—'}</td><td><button class="btn btn-ghost" style="padding:4px 8px;font-size:12px" onclick="openEditRecorrente('R','${r.id}')">✏️</button></td></tr>`).join('')}</tbody>
         </table></div>
       </div>
       <div class="tbl-wrap">
         <div class="tbl-hdr"><div class="sec-ttl">▼ Despesas Recorrentes <span class="yr-pill">${RECORRENTES_DESPESAS.length} itens</span></div></div>
         <div style="max-height:420px;overflow-y:auto"><table class="lan-tbl" style="min-width:unset">
-          <thead><tr><th>Descrição</th><th>Categoria</th><th style="text-align:right">Valor</th></tr></thead>
-          <tbody>${RECORRENTES_DESPESAS.map(r=>`<tr class="lr"><td style="font-size:12px;color:var(--tx)">${esc(r.desc)}</td><td><span class="cs">${esc(r.cat)}</span></td><td style="text-align:right" class="vc d">${fmt(r.valor)}</td></tr>`).join('')}</tbody>
+          <thead><tr><th>Descrição</th><th>Categoria</th><th style="text-align:right">Valor</th><th>Data Venc.</th><th></th></tr></thead>
+          <tbody>${RECORRENTES_DESPESAS.map(r=>`<tr class="lr"><td style="font-size:12px;color:var(--tx)">${esc(r.desc)}</td><td><span class="cs">${esc(r.cat)}</span></td><td style="text-align:right" class="vc d">${fmt(r.valor)}</td><td>${r.dataVenc||'—'}</td><td><button class="btn btn-ghost" style="padding:4px 8px;font-size:12px" onclick="openEditRecorrente('D','${r.id}')">✏️</button></td></tr>`).join('')}</tbody>
         </table></div>
       </div>
     </div>`;
@@ -1304,7 +1426,8 @@ let _dragCat = null;
 let _dragSub = null;
 
 function renderCategorias(c){
-  const cats = CATS_DATA[_catTipo]||[];
+  const recCats = CATS_DATA.R||[];
+  const despCats = CATS_DATA.D||[];
   c.innerHTML=`
     <style>
       .cat-card{background:var(--s1);border:1px solid var(--bd);border-radius:14px;margin-bottom:10px;overflow:hidden;transition:opacity .15s}
@@ -1313,49 +1436,346 @@ function renderCategorias(c){
       .cat-hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--bd);cursor:grab}
       .cat-hdr:active{cursor:grabbing}
       .drag-handle{color:var(--tx3);font-size:16px;margin-right:8px;user-select:none}
-      .sub-pill{display:inline-flex;align-items:center;gap:4px;background:var(--s2);border:1px solid var(--bd);border-radius:8px;padding:4px 10px;cursor:grab}
-      .sub-pill:active{cursor:grabbing}
-      .sub-pill.drag-over{border-color:var(--blue);background:rgba(88,166,255,.1)}
-      .sub-pill.dragging{opacity:.4}
+      .sub-item{display:flex;align-items:center;justify-content:space-between;padding:6px 16px;border-bottom:1px solid var(--bd);cursor:grab}
+      .sub-item:last-child{border-bottom:none}
+      .sub-item:active{cursor:grabbing}
+      .sub-item.drag-over{background:rgba(88,166,255,.05)}
+      .sub-item.dragging{opacity:.4}
     </style>
     <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
-      <button class="btn ${_catTipo==='R'?'btn-pri':'btn-ghost'}" onclick="_catTipo='R';render()">▲ Receitas</button>
-      <button class="btn ${_catTipo==='D'?'btn-pri':'btn-ghost'}" onclick="_catTipo='D';render()">▼ Despesas</button>
-      <span style="font-size:11px;color:var(--tx3);margin-left:8px">↕ Arraste para reordenar</span>
+      <span style="font-size:11px;color:var(--tx3)">↕ Arraste para reordenar</span>
     </div>
-    <div id="cats-list">
-      ${cats.sort((a,b)=>a.ordem-b.ordem).map((cat,ci)=>`
-        <div class="cat-card" id="cat-${cat.id}" draggable="true"
-          ondragstart="onCatDragStart(event,'${cat.id}')"
-          ondragover="onCatDragOver(event,'${cat.id}')"
-          ondragleave="onCatDragLeave(event,'${cat.id}')"
-          ondrop="onCatDrop(event,'${cat.id}')">
-          <div class="cat-hdr">
-            <div style="display:flex;align-items:center;gap:8px;flex:1">
-              <span class="drag-handle">⠿</span>
-              <span style="font-size:14px;font-weight:600;color:var(--tx)">${esc(cat.nome)}</span>
-              <button class="btn btn-ghost" style="padding:2px 7px;font-size:11px" onclick="editarCategoria('${cat.id}','${esc(cat.nome)}')">✏️</button>
-              <button class="btn" style="padding:2px 7px;font-size:11px;background:rgba(248,81,73,.1);color:var(--red);border:1px solid rgba(248,81,73,.2)" onclick="excluirCategoria('${cat.id}','${esc(cat.nome)}')">🗑️</button>
-            </div>
-            <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="adicionarSub('${cat.id}','${esc(cat.nome)}')">＋ Sub</button>
-          </div>
-          <div style="padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px" id="subs-${cat.id}">
-            ${(cat.subs||[]).sort((a,b)=>a.ordem-b.ordem).map(sub=>`
-              <div class="sub-pill" id="sub-${sub.id}" draggable="true"
-                ondragstart="onSubDragStart(event,'${sub.id}','${cat.id}')"
-                ondragover="onSubDragOver(event,'${sub.id}')"
-                ondragleave="onSubDragLeave(event,'${sub.id}')"
-                ondrop="onSubDrop(event,'${sub.id}','${cat.id}')">
-                <span style="font-size:12px;color:var(--tx3);margin-right:2px">⠿</span>
-                <span style="font-size:12.5px;color:var(--tx)">${esc(sub.nome)}</span>
-                <button onclick="editarSub('${sub.id}','${esc(sub.nome)}')" style="background:none;border:none;color:var(--tx3);font-size:11px;padding:0 2px;cursor:pointer;line-height:1">✏️</button>
-                <button onclick="excluirSub('${sub.id}','${esc(sub.nome)}','${cat.id}')" style="background:none;border:none;color:var(--red);font-size:11px;padding:0 2px;cursor:pointer;line-height:1">✕</button>
-              </div>`).join('')}
-            ${!(cat.subs||[]).length?`<span style="color:var(--tx3);font-size:12px">Nenhuma subcategoria</span>`:''}
-          </div>
-        </div>`).join('')}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <button class="btn btn-pri">▲ Receitas</button>
+          <button class="btn btn-ghost" onclick="_catTipo='R';render()">Editar</button>
+        </div>
+        <div id="rec-cats-list">
+          ${recCats.sort((a,b)=>a.ordem-b.ordem).map((cat,ci)=>`
+            <div class="cat-card" id="cat-${cat.id}" draggable="true"
+              ondragstart="onCatDragStart(event,'${cat.id}')"
+              ondragover="onCatDragOver(event,'${cat.id}')"
+              ondragleave="onCatDragLeave(event,'${cat.id}')"
+              ondrop="onCatDrop(event,'${cat.id}')">
+              <div class="cat-hdr">
+                <div style="display:flex;align-items:center;gap:8px;flex:1">
+                  <span class="drag-handle">⠿</span>
+                  <span style="font-size:14px;font-weight:600;color:var(--tx)">${esc(cat.nome)}</span>
+                  <button class="btn btn-ghost" style="padding:2px 7px;font-size:11px" onclick="editarCategoria('${cat.id}','${esc(cat.nome)}')">✏️</button>
+                  <button class="btn" style="padding:2px 7px;font-size:11px;background:rgba(248,81,73,.1);color:var(--red);border:1px solid rgba(248,81,73,.2)" onclick="excluirCategoria('${cat.id}','${esc(cat.nome)}')">🗑️</button>
+                </div>
+                <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="adicionarSub('${cat.id}','${esc(cat.nome)}')">＋ Sub</button>
+              </div>
+              <div id="subs-${cat.id}">
+                ${(cat.subs||[]).sort((a,b)=>a.ordem-b.ordem).map(sub=>`
+                  <div class="sub-item" id="sub-${sub.id}" draggable="true"
+                    ondragstart="onSubDragStart(event,'${sub.id}','${cat.id}')"
+                    ondragover="onSubDragOver(event,'${sub.id}')"
+                    ondragleave="onSubDragLeave(event,'${sub.id}')"
+                    ondrop="onSubDrop(event,'${sub.id}','${cat.id}')">
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <span style="color:var(--tx3);font-size:12px">⠿</span>
+                      <span style="font-size:12.5px;color:var(--tx)">${esc(sub.nome)}</span>
+                    </div>
+                    <div>
+                      <button onclick="editarSub('${sub.id}','${esc(sub.nome)}')" style="background:none;border:none;color:var(--tx3);font-size:11px;padding:0 2px;cursor:pointer;line-height:1">✏️</button>
+                      <button onclick="excluirSub('${sub.id}','${esc(sub.nome)}','${cat.id}')" style="background:none;border:none;color:var(--red);font-size:11px;padding:0 2px;cursor:pointer;line-height:1">✕</button>
+                    </div>
+                  </div>`).join('')}
+                ${!(cat.subs||[]).length?`<div style="padding:12px 16px;color:var(--tx3);font-size:12px">Nenhuma subcategoria</div>`:''}
+              </div>
+            </div>`).join('')}
+        </div>
+        <button class="btn btn-pri" onclick="_catTipo='R';adicionarCategoria()" style="margin-top:8px">＋ Nova Categoria (Receitas)</button>
+      </div>
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <button class="btn btn-pri">▼ Despesas</button>
+          <button class="btn btn-ghost" onclick="_catTipo='D';render()">Editar</button>
+        </div>
+        <div id="desp-cats-list">
+          ${despCats.sort((a,b)=>a.ordem-b.ordem).map((cat,ci)=>`
+            <div class="cat-card" id="cat-${cat.id}" draggable="true"
+              ondragstart="onCatDragStart(event,'${cat.id}')"
+              ondragover="onCatDragOver(event,'${cat.id}')"
+              ondragleave="onCatDragLeave(event,'${cat.id}')"
+              ondrop="onCatDrop(event,'${cat.id}')">
+              <div class="cat-hdr">
+                <div style="display:flex;align-items:center;gap:8px;flex:1">
+                  <span class="drag-handle">⠿</span>
+                  <span style="font-size:14px;font-weight:600;color:var(--tx)">${esc(cat.nome)}</span>
+                  <button class="btn btn-ghost" style="padding:2px 7px;font-size:11px" onclick="editarCategoria('${cat.id}','${esc(cat.nome)}')">✏️</button>
+                  <button class="btn" style="padding:2px 7px;font-size:11px;background:rgba(248,81,73,.1);color:var(--red);border:1px solid rgba(248,81,73,.2)" onclick="excluirCategoria('${cat.id}','${esc(cat.nome)}')">🗑️</button>
+                </div>
+                <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="adicionarSub('${cat.id}','${esc(cat.nome)}')">＋ Sub</button>
+              </div>
+              <div id="subs-${cat.id}">
+                ${(cat.subs||[]).sort((a,b)=>a.ordem-b.ordem).map(sub=>`
+                  <div class="sub-item" id="sub-${sub.id}" draggable="true"
+                    ondragstart="onSubDragStart(event,'${sub.id}','${cat.id}')"
+                    ondragover="onSubDragOver(event,'${sub.id}')"
+                    ondragleave="onSubDragLeave(event,'${sub.id}')"
+                    ondrop="onSubDrop(event,'${sub.id}','${cat.id}')">
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <span style="color:var(--tx3);font-size:12px">⠿</span>
+                      <span style="font-size:12.5px;color:var(--tx)">${esc(sub.nome)}</span>
+                    </div>
+                    <div>
+                      <button onclick="editarSub('${sub.id}','${esc(sub.nome)}')" style="background:none;border:none;color:var(--tx3);font-size:11px;padding:0 2px;cursor:pointer;line-height:1">✏️</button>
+                      <button onclick="excluirSub('${sub.id}','${esc(sub.nome)}','${cat.id}')" style="background:none;border:none;color:var(--red);font-size:11px;padding:0 2px;cursor:pointer;line-height:1">✕</button>
+                    </div>
+                  </div>`).join('')}
+                ${!(cat.subs||[]).length?`<div style="padding:12px 16px;color:var(--tx3);font-size:12px">Nenhuma subcategoria</div>`:''}
+              </div>
+            </div>`).join('')}
+        </div>
+        <button class="btn btn-pri" onclick="_catTipo='D';adicionarCategoria()" style="margin-top:8px">＋ Nova Categoria (Despesas)</button>
+      </div>
+    </div>`;
+}
+
+// ── Importar Dados ───────────────────────────────────────────────
+function renderImport(c){
+  c.innerHTML=`
+    <style>
+      .import-card{background:var(--s1);border:1px solid var(--bd);border-radius:14px;padding:20px;margin-bottom:16px}
+      .import-step{margin-bottom:24px}
+      .import-step h3{margin:0 0 8px 0;font-size:16px;color:var(--tx)}
+      .import-step p{margin:0 0 12px 0;font-size:13px;color:var(--tx2)}
+      .file-input{display:flex;align-items:center;gap:8px}
+      .file-input input[type="file"]{display:none}
+      .file-input label{cursor:pointer;padding:8px 12px;background:var(--s2);border:1px solid var(--bd);border-radius:6px;font-size:13px;color:var(--tx)}
+      .file-input label:hover{background:var(--s3)}
+      .preview-table{table-layout:fixed;width:100%;border-collapse:collapse;margin-top:12px}
+      .preview-table th,.preview-table td{padding:6px 8px;border:1px solid var(--bd);font-size:12px;text-align:left}
+      .preview-table th{background:var(--s2);font-weight:600}
+      .mapping-row{display:flex;gap:8px;margin-bottom:8px;align-items:center}
+      .mapping-row select{flex:1;padding:4px 8px;border:1px solid var(--bd);border-radius:4px;font-size:12px}
+      .btn-import{margin-top:16px}
+    </style>
+    <div class="import-card">
+      <h2 style="margin:0 0 16px 0;font-size:18px;color:var(--tx)">Importar Lançamentos de Receitas</h2>
+      <div class="import-step">
+        <h3>1. Selecione o arquivo</h3>
+        <p>Escolha o relatório exportado do seu sistema contábil (formato CSV, XLS ou XLSX). O arquivo deve conter colunas como data, descrição, categoria, valor, etc.</p>
+        <div class="file-input">
+          <input type="file" id="import-file" accept=".csv,.xls,.xlsx">
+          <label for="import-file">📎 Selecionar arquivo (CSV, XLS, XLSX)</label>
+          <span id="file-name" style="font-size:12px;color:var(--tx3)">Nenhum arquivo selecionado</span>
+        </div>
+      </div>
+      <div class="import-step" id="step-2" style="display:none">
+        <h3>2. Mapeie as colunas</h3>
+        <p>Selecione qual coluna do CSV corresponde a cada campo do sistema.</p>
+        <div id="mapping"></div>
+      </div>
+      <div class="import-step" id="step-3" style="display:none">
+        <h3>3. Preview dos dados</h3>
+        <p>Verifique se os dados estão corretos antes de importar.</p>
+        <div id="preview" style="max-height:300px;overflow-y:auto"></div>
+        <button class="btn btn-pri btn-import" onclick="importData()">Importar Dados</button>
+      </div>
     </div>
-    <button class="btn btn-pri" onclick="adicionarCategoria()" style="margin-top:8px">＋ Nova Categoria</button>`;
+  `;
+  document.getElementById('import-file').onchange=handleFileSelect;
+}
+
+let _importData = [];
+
+function handleFileSelect(e){
+  const file = e.target.files[0];
+  if(!file)return;
+  document.getElementById('file-name').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    if(file.name.endsWith('.csv')) parseCSV(e.target.result);
+    else parseExcel(e.target.result);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseCSV(text){
+  const lines = text.split('\n').filter(l => l.trim());
+  if(lines.length < 2){toast('Arquivo deve ter pelo menos cabeçalho e uma linha de dados.','err');return;}
+  const headers = lines[0].split(',').map(h => h.replace(/"/g,'').trim());
+  const rows = lines.slice(1).map(line => line.split(',').map(cell => cell.replace(/"/g,'').trim()));
+  _importData = rows.map(row => {
+    const obj = {};
+    headers.forEach((h,i) => obj[h] = row[i] || '');
+    return obj;
+  });
+  showMapping(headers);
+}
+
+function parseExcel(data){
+  try{
+    const workbook = XLSX.read(data, {type: 'array'});
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const json = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+    if(json.length < 2){toast('Planilha deve ter pelo menos cabeçalho e uma linha de dados.','err');return;}
+    const headers = json[0].map(h => String(h || '').trim());
+    const rows = json.slice(1).map(row => row.map(cell => String(cell || '').trim()));
+    _importData = rows.map(row => {
+      const obj = {};
+      headers.forEach((h,i) => obj[h] = row[i] || '');
+      return obj;
+    });
+    showMapping(headers);
+  }catch(e){
+    toast('Erro ao ler arquivo Excel: ' + e.message, 'err');
+  }
+}
+
+function showMapping(headers){
+  const mappingDiv = document.getElementById('mapping');
+  const fields = ['dataComp', 'dataPgto', 'desc', 'cat', 'sub', 'valorBruto', 'ded', 'forma', 'conta', 'doc', 'cc', 'obs'];
+  const fieldLabels = {
+    dataComp: 'Data Competência',
+    dataPgto: 'Data Pagamento',
+    desc: 'Descrição',
+    cat: 'Categoria',
+    sub: 'Subcategoria',
+    valorBruto: 'Valor Bruto',
+    ded: 'Deduções',
+    forma: 'Forma Pagamento',
+    conta: 'Conta',
+    doc: 'Nº Documento',
+    cc: 'Centro Custo',
+    obs: 'Observações'
+  };
+  mappingDiv.innerHTML = fields.map(f => `
+    <div class="mapping-row">
+      <label style="min-width:120px;font-size:12px;color:var(--tx)">${fieldLabels[f]}:</label>
+      <select id="map-${f}">
+        <option value="">-- Não mapear --</option>
+        ${headers.map(h => `<option value="${h}">${h}</option>`).join('')}
+      </select>
+    </div>
+  `).join('');
+  document.getElementById('step-2').style.display = 'block';
+  document.getElementById('step-3').style.display = 'none';
+  // Auto-map common fields
+  const autoMap = {
+    'Data': 'dataComp',
+    'Data Competência': 'dataComp',
+    'Data Pagamento': 'dataPgto',
+    'Descrição': 'desc',
+    'Categoria': 'cat',
+    'Subcategoria': 'sub',
+    'Valor': 'valorBruto',
+    'Valor Bruto': 'valorBruto',
+    'Deduções': 'ded',
+    'Forma': 'forma',
+    'Conta': 'conta',
+    'Documento': 'doc',
+    'Centro Custo': 'cc',
+    'Observações': 'obs'
+  };
+  headers.forEach(h => {
+    const f = autoMap[h];
+    if(f) document.getElementById(`map-${f}`).value = h;
+  });
+  // Add preview button
+  mappingDiv.innerHTML += `<button class="btn btn-pri" onclick="showPreview()">Gerar Preview</button>`;
+}
+
+function showPreview(){
+  const mapping = {};
+  ['dataComp', 'dataPgto', 'desc', 'cat', 'sub', 'valorBruto', 'ded', 'forma', 'conta', 'doc', 'cc', 'obs'].forEach(f => {
+    const sel = document.getElementById(`map-${f}`);
+    if(sel.value) mapping[f] = sel.value;
+  });
+  const previewData = _importData.slice(0,10).map(row => {
+    const item = {
+      tipo: 'R',
+      status: 'Pago',
+      dataComp: row[mapping.dataComp] || '',
+      dataPgto: row[mapping.dataPgto] || row[mapping.dataComp] || '',
+      desc: row[mapping.desc] || '',
+      cat: row[mapping.cat] || '',
+      sub: row[mapping.sub] || '',
+      valorBruto: parseFloat(row[mapping.valorBruto]) || 0,
+      ded: parseFloat(row[mapping.ded]) || 0,
+      forma: row[mapping.forma] || 'Dinheiro',
+      conta: row[mapping.conta] || '',
+      doc: row[mapping.doc] || '',
+      cc: row[mapping.cc] || '',
+      obs: row[mapping.obs] || ''
+    };
+    item.valorLiq = item.valorBruto - item.ded;
+    return item;
+  });
+  const previewDiv = document.getElementById('preview');
+  previewDiv.innerHTML = `
+    <table class="preview-table">
+      <thead>
+        <tr>
+          <th>Data Comp.</th>
+          <th>Descrição</th>
+          <th>Categoria</th>
+          <th>Subcategoria</th>
+          <th>Valor Bruto</th>
+          <th>Valor Líq.</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${previewData.map(item => `
+          <tr>
+            <td>${item.dataComp}</td>
+            <td>${esc(item.desc)}</td>
+            <td>${esc(item.cat)}</td>
+            <td>${esc(item.sub)}</td>
+            <td>${fmt(item.valorBruto)}</td>
+            <td>${fmt(item.valorLiq)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <p style="margin-top:8px;font-size:12px;color:var(--tx3)">Mostrando primeiras 10 linhas de ${_importData.length} total.</p>
+  `;
+  document.getElementById('step-3').style.display = 'block';
+}
+
+async function importData(){
+  if(!_importData.length){toast('Nenhum dado para importar.','err');return;}
+  const mapping = {};
+  ['dataComp', 'dataPgto', 'desc', 'cat', 'sub', 'valorBruto', 'ded', 'forma', 'conta', 'doc', 'cc', 'obs'].forEach(f => {
+    const sel = document.getElementById(`map-${f}`);
+    if(sel.value) mapping[f] = sel.value;
+  });
+  const toImport = _importData.map(row => ({
+    id: newId(),
+    tipo: 'R',
+    status: 'Pago',
+    dataComp: row[mapping.dataComp] || '',
+    dataPgto: row[mapping.dataPgto] || row[mapping.dataComp] || '',
+    desc: row[mapping.desc] || '',
+    cat: row[mapping.cat] || '',
+    sub: row[mapping.sub] || '',
+    valorBruto: parseFloat(row[mapping.valorBruto]) || 0,
+    ded: parseFloat(row[mapping.ded]) || 0,
+    forma: row[mapping.forma] || 'Dinheiro',
+    conta: row[mapping.conta] || '',
+    doc: row[mapping.doc] || '',
+    cc: row[mapping.cc] || '',
+    obs: row[mapping.obs] || ''
+  })).map(item => {
+    item.valorLiq = item.valorBruto - item.ded;
+    return item;
+  });
+  setSyncStatus('loading', 'Importando...');
+  try{
+    await sbFetch('POST', 'lancamentos', toImport);
+    DATA.push(...toImport);
+    setSyncStatus('ok', `${DATA.length} registros`);
+    render();
+    toast(`${toImport.length} lançamentos importados!`, 'ok');
+  }catch(e){
+    setSyncStatus('err', 'Erro');
+    toast('Erro ao importar: ' + e.message, 'err');
+  }
 }
 
 // ── Drag & Drop — Categorias ──────────────────────────────────────
@@ -1366,7 +1786,11 @@ async function onCatDrop(e,targetId){
   e.preventDefault();
   document.querySelectorAll('.cat-card').forEach(el=>{el.classList.remove('drag-over','dragging');});
   if(!_dragCat||_dragCat===targetId){_dragCat=null;return;}
-  const cats=CATS_DATA[_catTipo];
+  const tipoR = (CATS_DATA.R||[]).find(c=>c.id===targetId) ? 'R' : null;
+  const tipoD = (CATS_DATA.D||[]).find(c=>c.id===targetId) ? 'D' : null;
+  const tipo = tipoR || tipoD;
+  if(!tipo){_dragCat=null;return;}
+  const cats=CATS_DATA[tipo];
   const fromIdx=cats.findIndex(c=>c.id===_dragCat);
   const toIdx=cats.findIndex(c=>c.id===targetId);
   if(fromIdx<0||toIdx<0){_dragCat=null;return;}
@@ -1391,7 +1815,11 @@ async function onSubDrop(e,targetId,catId){
   e.preventDefault();e.stopPropagation();
   document.querySelectorAll('.sub-pill').forEach(el=>{el.classList.remove('drag-over','dragging');});
   if(!_dragSub||_dragSub.id===targetId){_dragSub=null;return;}
-  const cat=CATS_DATA[_catTipo].find(c=>c.id===catId);
+  const tipoR = (CATS_DATA.R||[]).find(c=>c.id===catId) ? 'R' : null;
+  const tipoD = (CATS_DATA.D||[]).find(c=>c.id===catId) ? 'D' : null;
+  const tipo = tipoR || tipoD;
+  if(!tipo){_dragSub=null;return;}
+  const cat=CATS_DATA[tipo].find(c=>c.id===catId);
   if(!cat){_dragSub=null;return;}
   const subs=cat.subs||[];
   const fromIdx=subs.findIndex(s=>s.id===_dragSub.id);
@@ -1433,7 +1861,7 @@ async function editarCategoria(id, nomeAtual){
   setSyncStatus('loading','Salvando...');
   try{
     await sbFetch('PATCH',`categorias?id=eq.${id}`,{nome:n,slug:slugify(n)});
-    const cat=CATS_DATA[_catTipo].find(c=>c.id===id);
+    const cat=(CATS_DATA.R||[]).find(c=>c.id===id)||(CATS_DATA.D||[]).find(c=>c.id===id);
     if(cat){cat.nome=n;cat.slug=slugify(n);}
     rebuildCatsObj();
     setSyncStatus('ok',`${DATA.length} registros`);
@@ -1446,7 +1874,10 @@ async function excluirCategoria(id, nome){
   setSyncStatus('loading','Excluindo...');
   try{
     await sbFetch('DELETE',`categorias?id=eq.${id}`);
-    CATS_DATA[_catTipo]=CATS_DATA[_catTipo].filter(c=>c.id!==id);
+    const tipoR = (CATS_DATA.R||[]).find(c=>c.id===id) ? 'R' : null;
+    const tipoD = (CATS_DATA.D||[]).find(c=>c.id===id) ? 'D' : null;
+    const tipo = tipoR || tipoD;
+    if(tipo) CATS_DATA[tipo]=CATS_DATA[tipo].filter(c=>c.id!==id);
     rebuildCatsObj();
     setSyncStatus('ok',`${DATA.length} registros`);
     render();toast(`"${nome}" excluída.`,'err');
@@ -1457,7 +1888,11 @@ async function adicionarSub(catId, catNome){
   const nome=prompt(`Nova subcategoria em "${catNome}":`);
   if(!nome||!nome.trim())return;
   const n=nome.trim();
-  const cat=CATS_DATA[_catTipo].find(c=>c.id===catId);
+  const tipoR = (CATS_DATA.R||[]).find(c=>c.id===catId) ? 'R' : null;
+  const tipoD = (CATS_DATA.D||[]).find(c=>c.id===catId) ? 'D' : null;
+  const tipo = tipoR || tipoD;
+  if(!tipo)return;
+  const cat=CATS_DATA[tipo].find(c=>c.id===catId);
   if(!cat)return;
   if((cat.subs||[]).find(s=>s.nome===n)){toast('Subcategoria já existe!','err');return;}
   const id=newId(), ordem=(cat.subs||[]).length;
@@ -1479,9 +1914,11 @@ async function editarSub(id, nomeAtual){
   setSyncStatus('loading','Salvando...');
   try{
     await sbFetch('PATCH',`subcategorias?id=eq.${id}`,{nome:n,slug:slugify(n)});
-    for(const cat of CATS_DATA[_catTipo]){
-      const sub=(cat.subs||[]).find(s=>s.id===id);
-      if(sub){sub.nome=n;sub.slug=slugify(n);break;}
+    for(const tipo of ['R','D']){
+      for(const cat of CATS_DATA[tipo]||[]){
+        const sub=(cat.subs||[]).find(s=>s.id===id);
+        if(sub){sub.nome=n;sub.slug=slugify(n);break;}
+      }
     }
     rebuildCatsObj();
     setSyncStatus('ok',`${DATA.length} registros`);
@@ -1494,8 +1931,13 @@ async function excluirSub(id, nome, catId){
   setSyncStatus('loading','Excluindo...');
   try{
     await sbFetch('DELETE',`subcategorias?id=eq.${id}`);
-    const cat=CATS_DATA[_catTipo].find(c=>c.id===catId);
-    if(cat)cat.subs=(cat.subs||[]).filter(s=>s.id!==id);
+    const tipoR = (CATS_DATA.R||[]).find(c=>c.id===catId) ? 'R' : null;
+    const tipoD = (CATS_DATA.D||[]).find(c=>c.id===catId) ? 'D' : null;
+    const tipo = tipoR || tipoD;
+    if(tipo){
+      const cat=CATS_DATA[tipo].find(c=>c.id===catId);
+      if(cat)cat.subs=(cat.subs||[]).filter(s=>s.id!==id);
+    }
     rebuildCatsObj();
     setSyncStatus('ok',`${DATA.length} registros`);
     render();toast(`"${nome}" excluída.`,'err');
@@ -1525,8 +1967,6 @@ function toast(msg,type='ok'){clearTimeout(toastTimeout);const existing=document
 async function startApp(){
   init();
 }
-
-document.getElementById('login-inp').focus();
 </script>
 </body>
 </html>
