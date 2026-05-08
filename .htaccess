@@ -1,0 +1,10 @@
+Options -Indexes
+RewriteEngine On
+RewriteBase /Skala-F/
+
+# Serve arquivos reais diretamente (CSS, JS, imagens, etc.)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Tudo o mais vai para financeiro.html
+RewriteRule ^(.*)$ financeiro.html [L]
