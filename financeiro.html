@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+<meta http-equiv="Pragma" content="no-cache"/>
+<meta http-equiv="Expires" content="0"/>
 <title>Financeiro — Escritório</title>
 <style>
 :root{
@@ -216,6 +219,33 @@ input::placeholder{color:var(--tx3)}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
+<script>
+(function clearOldAppCache(){
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations()
+      .then(function(registrations){
+        registrations.forEach(function(registration){
+          registration.unregister();
+        });
+      })
+      .catch(function(error){
+        console.warn('Nao foi possivel remover service workers antigos:', error);
+      });
+  }
+
+  if ('caches' in window) {
+    caches.keys()
+      .then(function(keys){
+        keys.forEach(function(key){
+          caches.delete(key);
+        });
+      })
+      .catch(function(error){
+        console.warn('Nao foi possivel limpar o Cache Storage:', error);
+      });
+  }
+})();
+</script>
 <div id="login-screen">
   <div class="login-box">
     <div class="login-ico">₢</div>
