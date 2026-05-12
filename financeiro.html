@@ -311,7 +311,7 @@ input::placeholder{color:var(--tx3)}
   </div>
 </div>
 <script>
-const APP_VERSION = 'v2.5.76';
+const APP_VERSION = 'v2.5.77';
 const APP_DATE = '2026-05-06';
 
 // Preenche versão na tela
@@ -342,7 +342,7 @@ const sbFetch=async(method,path,body=null)=>{
 };
 
 async function dbLoad(){return await sbFetch('GET',`${TABLE}?order=created_at.desc&select=*`);}
-async function dbInsert(item){const res=await sbFetch('POST',TABLE,toRow(item));return Array.isArray(res)?res[0]:res;}
+async function dbInsert(item){const row=toRow(item);delete row.id;const res=await sbFetch('POST',TABLE,row);return Array.isArray(res)?res[0]:res;}
 async function dbUpdate(item){await sbFetch('PATCH',`${TABLE}?id=eq.${item.id}`,toRow(item));}
 async function dbDelete(id){await sbFetch('DELETE',`${TABLE}?id=eq.${id}`);}
 
