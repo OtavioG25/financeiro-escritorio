@@ -4068,36 +4068,38 @@ function matchRelatorio(relEntries){
   const matched=[],uncertain=[],notFound=[];
   const usedIds=new Set();
   for(const rel of relEntries){
-    let best=null,bestScore=0,bestVenOk=false;
+    let best=null,bestScore=0,bestVenOk=false,bestNameScore=0;
     for(const p of pending){
       if(usedIds.has(p.id))continue;
       let score=0;
-      // Vencimento date match — critério principal
-      const venOk=rel.vencimento&&p.dataPgto&&rel.vencimento.slice(0,7)===p.dataPgto.slice(0,7);
+      // 1. Vencimento — critério obrigatório
+      const venOk=!!(rel.vencimento&&p.dataPgto&&rel.vencimento.slice(0,7)===p.dataPgto.slice(0,7));
       if(rel.vencimento&&p.dataPgto){
         if(rel.vencimento===p.dataPgto)score+=5;
         else if(venOk)score+=2;
-        else score-=3; // penaliza fortemente mês errado
+        else score-=4; // mês errado: penalidade forte
       }
-      // Value match (valorRec minus juros vs valorLiq)
+      // 2. Nome — critério obrigatório
+      const ns=_nameScore(rel.clientName,p.desc||'');
+      score+=ns*4; // peso maior para nome
+      // 3. Valor (valorRec - juros vs valorLiq)
       const pVal=Number(p.valorLiq)||Number(p.valorBruto)||0;
       const relBase=rel.valorRec-rel.juros;
       if(pVal>0){
         const diff=Math.abs(pVal-relBase)/pVal;
-        if(diff<0.01)score+=4;
+        if(diff<0.01)score+=3;
         else if(diff<0.05)score+=2;
         else if(diff<0.20)score+=1;
       }
-      // Name similarity
-      score+=_nameScore(rel.clientName,p.desc||'')*3;
-      // Competência month
-      if(rel.competencia&&p.dataComp&&rel.competencia.slice(0,7)===p.dataComp.slice(0,7))score+=2;
-      if(score>bestScore){bestScore=score;best=p;bestVenOk=!!venOk;}
+      // 4. Competência
+      if(rel.competencia&&p.dataComp&&rel.competencia.slice(0,7)===p.dataComp.slice(0,7))score+=1;
+      if(score>bestScore){bestScore=score;best=p;bestVenOk=venOk;bestNameScore=ns;}
     }
-    if(!best||bestScore<4){
+    // "Identificado" exige: score alto + vencimento no mesmo mês + nome com similaridade mínima
+    const nameOk=bestNameScore>=0.35;
+    if(!best||bestScore<3){
       notFound.push({rel,selected:false});
-    }else if(bestScore>=7&&bestVenOk){
-      // Alta confiança só se vencimento do mesmo mês
+    }else if(bestScore>=7&&bestVenOk&&nameOk){
       usedIds.add(best.id);
       matched.push({rel,match:best,selected:true});
     }else{
@@ -4150,14 +4152,14 @@ function renderRelPreview(){
         <div style="font-size:9.5px;font-weight:700;color:var(--blue);letter-spacing:.4px;margin-bottom:2px">📋 RELATÓRIO DOMÍNIO</div>
         <div style="font-size:12.5px;font-weight:600;color:var(--tx)">${rel.clientName||'(sem nome)'}</div>
         ${descLine}
-        <div style="font-size:11px;color:var(--tx2);margin-top:2px">Venc: <b style="${venMismatch?'color:var(--red)':''}">${fmtD(rel.vencimento)}</b> &nbsp;|&nbsp; Rec: <b>${fmtD(rel.dataRec)}</b> &nbsp;|&nbsp; <b style="${valMismatch?'color:var(--orange)':''}">${fmt(rel.valorRec)}</b>${jurosTag}</div>
+        <div style="font-size:11px;color:var(--tx2);margin-top:2px">Comp: <b>${rel.competencia?rel.competencia.slice(0,7):'?'}</b> &nbsp;|&nbsp; Venc: <b style="${venMismatch?'color:var(--red)':''}">${fmtD(rel.vencimento)}</b> &nbsp;|&nbsp; Rec: <b>${fmtD(rel.dataRec)}</b> &nbsp;|&nbsp; <b style="${valMismatch?'color:var(--orange)':''}">${fmt(rel.valorRec)}</b>${jurosTag}</div>
       </div>`;
     // Sistema block (teal tint) — only for matched/uncertain
     const sysBlock=match?`
       <div style="border-radius:5px;padding:5px 8px;background:color-mix(in srgb,var(--teal) 7%,transparent);border-left:2px solid var(--teal)">
         <div style="font-size:9.5px;font-weight:700;color:var(--teal);letter-spacing:.4px;margin-bottom:2px">🗂️ LANÇAMENTO NO SISTEMA</div>
         <div style="font-size:12.5px;color:var(--tx)">${match.desc||'?'}</div>
-        <div style="font-size:11px;color:var(--tx2);margin-top:1px">Venc: <b style="${venMismatch?'color:var(--red)':''}">${fmtD(match.dataPgto)}</b> &nbsp;|&nbsp; Valor: <b style="${valMismatch?'color:var(--orange)':''}">${fmt(Number(match.valorLiq)||0)}</b> &nbsp;|&nbsp; ${match.cat||''}${match.sub?` › ${match.sub}`:''}</div>
+        <div style="font-size:11px;color:var(--tx2);margin-top:1px">Comp: <b>${match.dataComp?match.dataComp.slice(0,7):'?'}</b> &nbsp;|&nbsp; Venc: <b style="${venMismatch?'color:var(--red)':''}">${fmtD(match.dataPgto)}</b> &nbsp;|&nbsp; Valor: <b style="${valMismatch?'color:var(--orange)':''}">${fmt(Number(match.valorLiq)||0)}</b> &nbsp;|&nbsp; ${match.cat||''}${match.sub?` › ${match.sub}`:''}</div>
       </div>`:'';
     const badge=type==='uncertain'?`<span style="font-size:10px;background:color-mix(in srgb,var(--orange) 15%,transparent);color:var(--orange);padding:1px 7px;border-radius:10px;display:inline-block;margin-bottom:4px">⚠️ baixa confiança</span><br>`:'';
     const chkCell=type==='notfound'
