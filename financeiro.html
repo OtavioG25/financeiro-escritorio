@@ -4029,52 +4029,53 @@ function _bestNameScore(cands,pDesc){
 }
 
 function parseRelatorioXLSX(wb){
+  // Estrutura do Domínio (colunas 1-indexed → 0-indexed para XLSX.js):
+  // A(0)=código  C(2)=nome cliente  F(5)=competência  G(6)=sequencial
+  // J(9)=vencimento  R(17)=data recebimento  U(20)=cód.evento  W(22)=descrição
+  // AB(27)=juros  AK(36)=valor recebido
+  //
+  // Tipos de linha:
+  //   Principal: tem A(0)=código numérico E J(9)=serial de data → salva contexto do cliente
+  //   Sub-evento: tem U(20)=código numérico, sem A nem J → herda contexto do cliente atual
+  //   Total/cabeçalho: demais linhas → ignoradas
   const ws=wb.Sheets[wb.SheetNames[0]];
   const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
-  const isGoodName=s=>{
-    s=String(s||'').trim();
-    return s.length>3&&isNaN(Number(s))&&!/^\d/.test(s)&&!s.startsWith('Total')&&!s.startsWith('Seq');
-  };
-  const rowCands=r=>{
-    const out=[];
-    for(const ci of[2,3,6,7,8,22]){
-      const s=String(r[ci]||'').trim();
-      if(isGoodName(s)&&!out.includes(s))out.push(s);
-    }
-    return out;
-  };
   const entries=[];
-  for(let i=0;i<rows.length;i++){
-    const r=rows[i];
-    const cod=r[0],venSerial=r[9];
-    if(!cod||isNaN(Number(cod))||Number(cod)<1)continue;
-    if(!venSerial||isNaN(Number(venSerial))||Number(venSerial)<40000)continue;
-    const desc=String(r[22]||'').trim();
-    // Prefer columns other than desc for client name
-    let nameCandidates=rowCands(r).filter(s=>_normName(s)!==_normName(desc));
-    if(!nameCandidates.length){
-      // Search backward up to 8 rows for a name header row
-      for(let j=i-1;j>=Math.max(0,i-8);j--){
-        const pr=rows[j];
-        if(pr[0]&&!isNaN(Number(pr[0]))&&Number(pr[0])>0&&pr[9]&&!isNaN(Number(pr[9]))&&Number(pr[9])>40000)break;
-        const pc=rowCands(pr).filter(s=>_normName(s)!==_normName(desc));
-        if(pc.length){nameCandidates=pc;break;}
-      }
+  let ctx=null; // contexto do cliente atual: {cod, name, competencia, vencimento, dataRec}
+
+  const isNumId=v=>v&&!isNaN(Number(v))&&Number(v)>=1;
+  const isDateSerial=v=>v&&!isNaN(Number(v))&&Number(v)>40000;
+  const mkEntry=(ctx,desc,valorRec,juros,descontos,retencoes)=>{
+    if(!ctx||!ctx.dataRec||valorRec<=0)return null;
+    return{
+      cod:ctx.cod, clientName:ctx.name, desc,
+      nameCandidates:[ctx.name,desc].filter(Boolean),
+      competencia:ctx.competencia, vencimento:ctx.vencimento,
+      dataRec:ctx.dataRec, valorRec, juros, descontos, retencoes
+    };
+  };
+
+  for(const r of rows){
+    // ── Linha principal: tem código de cliente E vencimento ──
+    if(isNumId(r[0])&&isDateSerial(r[9])){
+      ctx={
+        cod:Number(r[0]),
+        name:String(r[2]||'').trim(),        // C(2) = nome do cliente
+        competencia:_xlToISO(r[5]),
+        vencimento:_xlToISO(Number(r[9])),
+        dataRec:_xlToISO(r[17]),
+      };
+      const e=mkEntry(ctx,String(r[22]||'').trim(),Number(r[36])||0,Number(r[27])||0,Number(r[30])||0,Number(r[32])||0);
+      if(e)entries.push(e);
+      continue;
     }
-    if(!nameCandidates.includes(desc))nameCandidates.push(desc);
-    const clientName=nameCandidates[0]||desc;
-    const dataRec=_xlToISO(r[17]);
-    const valorRec=Number(r[36])||0;
-    const juros=Number(r[27])||0;
-    if(!dataRec||valorRec===0)continue;
-    entries.push({
-      cod:Number(cod),clientName,desc,nameCandidates,
-      competencia:_xlToISO(r[5]),
-      vencimento:_xlToISO(Number(venSerial)),
-      dataRec,valorFat:Number(r[11])||0,
-      valorRec,juros,
-      descontos:Number(r[30])||0,retencoes:Number(r[32])||0
-    });
+    // ── Sub-evento: tem código de evento U(20), sem código de cliente ──
+    // Herda nome/vencimento/data do contexto atual
+    if(ctx&&isNumId(r[20])&&!r[0]&&!r[9]){
+      const e=mkEntry(ctx,String(r[22]||'').trim(),Number(r[36])||0,Number(r[27])||0,Number(r[30])||0,Number(r[32])||0);
+      if(e)entries.push(e);
+    }
+    // Demais linhas (totais, cabeçalhos de página): ignoradas
   }
   return entries;
 }
