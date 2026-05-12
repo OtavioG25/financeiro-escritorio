@@ -311,7 +311,7 @@ input::placeholder{color:var(--tx3)}
   </div>
 </div>
 <script>
-const APP_VERSION = 'v2.5.72';
+const APP_VERSION = 'v2.5.73';
 const APP_DATE = '2026-05-06';
 
 // Preenche versão na tela
@@ -4086,21 +4086,24 @@ function parseRelatorioXLSX(wb){
 }
 
 function _scoreEntry(rel,p,looseVal){
-  const venExact=!!(rel.vencimento&&p.dataPgto&&rel.vencimento===p.dataPgto);
+  // REGRAS MÁXIMAS — se falhar qualquer uma: sem match
   const venMonthOk=!!(rel.vencimento&&p.dataPgto&&rel.vencimento.slice(0,7)===p.dataPgto.slice(0,7));
+  if(!venMonthOk)return null; // mês de vencimento obrigatório
   const ns=_bestNameScore(rel.nameCandidates,p.desc||'');
+  if(ns<0.35)return null; // nome obrigatório
+  const venExact=rel.vencimento===p.dataPgto;
   const pVal=Number(p.valorLiq)||Number(p.valorBruto)||0;
   const relBase=rel.valorRec-rel.juros;
   const diff=pVal>0?Math.abs(pVal-relBase)/pVal:1;
   // Em modo estrito (1ª passagem): ignora se valor difere >10%
   if(!looseVal&&diff>0.10)return null;
-  let score=venExact?6:venMonthOk?3:-6;
+  let score=venExact?6:3; // venMonthOk já garantido acima
   score+=ns*5;
   if(pVal>0){
     if(diff<0.01)score+=3;else if(diff<0.05)score+=2;else if(diff<0.10)score+=1;
   }
   if(rel.competencia&&p.dataComp&&rel.competencia.slice(0,7)===p.dataComp.slice(0,7))score+=1;
-  return{score,venMonthOk,ns};
+  return{score,venMonthOk:true,ns};
 }
 
 function matchRelatorio(relEntries){
@@ -4111,17 +4114,16 @@ function matchRelatorio(relEntries){
 
   // ── 1ª passagem: valor próximo (≤10%) ─────────────────────────────────────
   for(const rel of relEntries){
-    let best=null,bestScore=-999,bestVenOk=false,bestNameScore=0;
+    let best=null,bestScore=-999,bestVenExact=false;
     for(const p of pending){
       if(usedIds.has(p.id))continue;
       const r=_scoreEntry(rel,p,false);
-      if(!r)continue; // valor muito diferente: pula na 1ª passagem
-      if(r.score>bestScore){bestScore=r.score;best=p;bestVenOk=r.venMonthOk;bestNameScore=r.ns;}
+      if(!r)continue; // mês/nome/valor falharam
+      if(r.score>bestScore){bestScore=r.score;best=p;bestVenExact=(rel.vencimento===p.dataPgto);}
     }
-    const nameOk=bestNameScore>=0.35;
-    if(!best||bestScore<2||!nameOk){
+    if(!best||bestScore<2){
       unmatchedRel.push(rel); // tenta na 2ª passagem
-    }else if(bestScore>=8&&bestVenOk){
+    }else if(bestScore>=8&&bestVenExact){
       usedIds.add(best.id);
       matched.push({rel,match:best,selected:true,manualSet:false});
     }else{
@@ -4132,15 +4134,14 @@ function matchRelatorio(relEntries){
 
   // ── 2ª passagem: valor livre — apenas Incerto (pagamento parcial) ──────────
   for(const rel of unmatchedRel){
-    let best=null,bestScore=-999,bestVenOk=false,bestNameScore=0;
+    let best=null,bestScore=-999;
     for(const p of pending){
       if(usedIds.has(p.id))continue;
       const r=_scoreEntry(rel,p,true);
       if(!r)continue;
-      if(r.score>bestScore){bestScore=r.score;best=p;bestVenOk=r.venMonthOk;bestNameScore=r.ns;}
+      if(r.score>bestScore){bestScore=r.score;best=p;}
     }
-    const nameOk=bestNameScore>=0.35;
-    if(!best||bestScore<2||!nameOk){
+    if(!best||bestScore<2){
       notFound.push({rel,match:null,selected:false,manualSet:false});
     }else{
       // Pagamento parcial → sempre Incerto, nunca Identificado
