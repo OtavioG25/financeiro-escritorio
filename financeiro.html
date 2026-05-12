@@ -4012,13 +4012,18 @@ function _normName(s){
   return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
 }
 
+// Sufixos societários comuns — não devem contribuir para similaridade de nome
+const _NAME_STOPWORDS=new Set(['ltda','eireli','eirele','epp','eire','eire','me','sa','ss','sas','inc','lda','cia','co','the']);
+
 function _nameScore(a,b){
   const na=_normName(a),nb=_normName(b);
   if(!na||!nb)return 0;
   if(na===nb)return 1;
   if(na.includes(nb)||nb.includes(na))return 0.9;
-  const wa=new Set(na.split(' ').filter(w=>w.length>2));
-  const wb2=nb.split(' ').filter(w=>w.length>2);
+  // Filtra stopwords e palavras curtas para evitar falsos positivos por "LTDA", "ME", etc.
+  const sig=w=>w.length>2&&!_NAME_STOPWORDS.has(w);
+  const wa=new Set(na.split(' ').filter(sig));
+  const wb2=nb.split(' ').filter(sig);
   if(!wa.size||!wb2.length)return 0;
   let hits=0;for(const w of wb2){if(wa.has(w))hits++;}
   return hits/Math.max(wa.size,wb2.length);
@@ -4102,10 +4107,11 @@ function matchRelatorio(relEntries){
       if(rel.competencia&&p.dataComp&&rel.competencia.slice(0,7)===p.dataComp.slice(0,7))score+=1;
       if(score>bestScore){bestScore=score;best=p;bestVenOk=venMonthOk;bestNameScore=ns;}
     }
-    const nameOk=bestNameScore>=0.4;
-    if(!best||bestScore<2){
-      notFound.push({rel,match:null,selected:false,manualSet:false});
-    }else if(bestScore>=8&&bestVenOk&&nameOk){
+    const nameOk=bestNameScore>=0.35;
+    if(!best||bestScore<2||!nameOk){
+      // Nome não bate ou score muito baixo → notFound SEM consumir o ID do pendente
+      notFound.push({rel,match:best&&nameOk?best:null,selected:false,manualSet:false});
+    }else if(bestScore>=8&&bestVenOk){
       usedIds.add(best.id);
       matched.push({rel,match:best,selected:true,manualSet:false});
     }else{
