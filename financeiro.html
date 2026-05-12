@@ -311,7 +311,7 @@ input::placeholder{color:var(--tx3)}
   </div>
 </div>
 <script>
-const APP_VERSION = 'v2.5.75';
+const APP_VERSION = 'v2.5.76';
 const APP_DATE = '2026-05-06';
 
 // Preenche versão na tela
@@ -4157,7 +4157,7 @@ function matchRelatorio(relEntries){
 }
 
 function _relJurosCat(){
-  const cats=(CATS||[]).filter(c=>c.tipo==='R');
+  const cats=(CATS_DATA&&CATS_DATA.R)||[];
   for(const c of cats){
     const n=_normName(c.nome);
     if(n.includes('financeira')||n.includes('juros')){
