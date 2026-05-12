@@ -311,7 +311,7 @@ input::placeholder{color:var(--tx3)}
   </div>
 </div>
 <script>
-const APP_VERSION = 'v2.5.77';
+const APP_VERSION = 'v2.5.78';
 const APP_DATE = '2026-05-06';
 
 // Preenche versão na tela
@@ -4372,6 +4372,26 @@ async function confirmarBaixarRel(){
   if(!toProcess.length)return;
   const btn=document.getElementById('rel-confirm-btn');
   if(btn){btn.disabled=true;btn.textContent='Processando...';}
+  // Barra de progresso
+  const progWrap=document.createElement('div');
+  progWrap.id='rel-progress-wrap';
+  progWrap.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:9999;background:var(--s2);border-top:1px solid var(--br);padding:10px 20px;display:flex;align-items:center;gap:12px;box-shadow:0 -2px 12px #0004';
+  progWrap.innerHTML=`
+    <span id="rel-prog-txt" style="font-size:12px;color:var(--tx2);white-space:nowrap">0 / ${toProcess.length}</span>
+    <div style="flex:1;height:8px;background:var(--br);border-radius:4px;overflow:hidden">
+      <div id="rel-prog-bar" style="height:100%;width:0%;background:var(--blue);border-radius:4px;transition:width 0.15s ease"></div>
+    </div>
+    <span id="rel-prog-pct" style="font-size:12px;color:var(--blue);font-weight:700;min-width:36px;text-align:right">0%</span>`;
+  document.body.appendChild(progWrap);
+  const updateProg=(done)=>{
+    const pct=Math.round(done/toProcess.length*100);
+    const bar=document.getElementById('rel-prog-bar');
+    const txt=document.getElementById('rel-prog-txt');
+    const pctEl=document.getElementById('rel-prog-pct');
+    if(bar)bar.style.width=pct+'%';
+    if(txt)txt.textContent=`${done} / ${toProcess.length}`;
+    if(pctEl)pctEl.textContent=pct+'%';
+  };
   const conta=REL_CONTA||CONTAS[0]||'Caixa';
   const{cat:jCat,sub:jSub}=_relJurosCat();
   let ok=0,err=0;
@@ -4422,7 +4442,9 @@ async function confirmarBaixarRel(){
       }
       ok++;
     }catch(e){err++;console.error('Erro ao baixar:',e);}
+    updateProg(ok+err);
   }
+  progWrap.remove();
   setSyncStatus('ok',`${DATA.length} registros`);
   render();
   toast(`${ok} recebimento(s) baixado(s)${err?`, ${err} erro(s)`:''}`,ok>0?'ok':'err');
