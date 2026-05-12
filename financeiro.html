@@ -4114,62 +4114,85 @@ function _relJurosCat(){
   return{cat:'Receitas Financeiras',sub:'Juros e Multas por Atrasos'};
 }
 
+function relScrollTo(secId){
+  const el=document.getElementById(secId);
+  const sc=document.getElementById('rel-tbl-scroll');
+  if(el&&sc)sc.scrollTop=Math.max(0,el.offsetTop-sc.offsetTop-4);
+}
+
 function renderRelPreview(){
+  // Preserve scroll position across re-renders
+  const sc=document.getElementById('rel-tbl-scroll');
+  const savedScroll=sc?sc.scrollTop:0;
+
   const selCount=REL_MATCHED.filter(r=>r.selected).length+REL_UNCERTAIN.filter(r=>r.selected).length;
   const totalVal=[...REL_MATCHED,...REL_UNCERTAIN].filter(r=>r.selected).reduce((s,r)=>s+r.rel.valorRec,0);
   const totalJuros=[...REL_MATCHED,...REL_UNCERTAIN].filter(r=>r.selected).reduce((s,r)=>s+r.rel.juros,0);
 
+  const fmtD=iso=>iso?iso.split('-').reverse().join('/'):'?';
+
   const mkRows=(list,type)=>list.map((item,i)=>{
     const{rel,match,selected}=item;
-    const jurosTag=rel.juros>0?`<span style="font-size:11px;background:color-mix(in srgb,var(--orange) 18%,transparent);color:var(--orange);padding:1px 7px;border-radius:10px;margin-left:5px">+${fmt(rel.juros)} juros</span>`:'';
-    const matchLine=match?`<div style="font-size:11px;color:var(--tx3);margin-top:2px">→ ${match.desc} | venc ${match.dataPgto||'?'} | ${fmt(Number(match.valorLiq)||0)}</div>`:'';
-    const badge=type==='uncertain'?`<span style="font-size:10px;color:var(--orange);margin-left:4px">(baixa confiança)</span>`:'';
-    const chkCell=type==='notfound'?`<td style="padding:7px 8px;text-align:center;color:var(--tx3)">—</td>`:
-      `<td style="padding:7px 8px;text-align:center"><input type="checkbox" ${selected?'checked':''} onchange="relToggle('${type}',${i},this.checked)"></td>`;
-    return`<tr style="${selected?'background:color-mix(in srgb,var(--blue) 8%,transparent)':''}">
+    // Relatório block (blue tint)
+    const jurosTag=rel.juros>0?`<span style="font-size:10px;background:color-mix(in srgb,var(--orange) 18%,transparent);color:var(--orange);padding:1px 6px;border-radius:10px;margin-left:5px">+${fmt(rel.juros)} juros</span>`:'';
+    const relBlock=`
+      <div style="border-radius:5px;padding:5px 8px;margin-bottom:3px;background:color-mix(in srgb,var(--blue) 7%,transparent);border-left:2px solid var(--blue)">
+        <div style="font-size:9.5px;font-weight:700;color:var(--blue);letter-spacing:.4px;margin-bottom:2px">📋 RELATÓRIO DOMÍNIO</div>
+        <div style="font-size:12.5px;font-weight:600;color:var(--tx)">${rel.clientName||'(sem nome)'}</div>
+        <div style="font-size:11px;color:var(--tx2);margin-top:1px">Venc: <b>${fmtD(rel.vencimento)}</b> &nbsp;|&nbsp; Recebido em: <b>${fmtD(rel.dataRec)}</b> &nbsp;|&nbsp; <b>${fmt(rel.valorRec)}</b>${jurosTag}</div>
+      </div>`;
+    // Sistema block (teal tint) — only for matched/uncertain
+    const sysBlock=match?`
+      <div style="border-radius:5px;padding:5px 8px;background:color-mix(in srgb,var(--teal) 7%,transparent);border-left:2px solid var(--teal)">
+        <div style="font-size:9.5px;font-weight:700;color:var(--teal);letter-spacing:.4px;margin-bottom:2px">🗂️ LANÇAMENTO NO SISTEMA</div>
+        <div style="font-size:12.5px;color:var(--tx)">${match.desc||'?'}</div>
+        <div style="font-size:11px;color:var(--tx2);margin-top:1px">Venc: <b>${fmtD(match.dataPgto)}</b> &nbsp;|&nbsp; Valor: <b>${fmt(Number(match.valorLiq)||0)}</b> &nbsp;|&nbsp; ${match.cat||''}${match.sub?` › ${match.sub}`:''}</div>
+      </div>`:'';
+    const badge=type==='uncertain'?`<span style="font-size:10px;background:color-mix(in srgb,var(--orange) 15%,transparent);color:var(--orange);padding:1px 7px;border-radius:10px;display:inline-block;margin-bottom:4px">⚠️ baixa confiança</span><br>`:'';
+    const chkCell=type==='notfound'
+      ?`<td style="padding:8px 6px;text-align:center;color:var(--tx3);vertical-align:top;padding-top:14px">—</td>`
+      :`<td style="padding:8px 6px;text-align:center;vertical-align:top;padding-top:14px"><input type="checkbox" ${selected?'checked':''} onchange="relToggle('${type}',${i},this.checked)"></td>`;
+    return`<tr style="border-bottom:1px solid var(--br);${selected?'background:color-mix(in srgb,var(--blue) 5%,transparent)':''}">
       ${chkCell}
-      <td style="padding:7px 8px;font-size:13px">
-        <div><strong>${rel.clientName||'(sem nome)'}</strong>${badge}</div>
-        <div style="font-size:11px;color:var(--tx3)">Venc: ${rel.vencimento||'?'} | Rec: ${rel.dataRec||'?'}</div>
-        ${matchLine}
-      </td>
-      <td style="padding:7px 8px;text-align:right;font-size:13px;white-space:nowrap">${fmt(rel.valorRec)}${jurosTag}</td>
+      <td style="padding:8px 8px 8px 4px">${badge}${relBlock}${sysBlock}</td>
     </tr>`;
   }).join('');
 
-  const section=(list,type,label,color)=>!list.length?'':
-    `<tr><td colspan="3" style="padding:6px 12px;font-size:11px;font-weight:700;color:${color};background:color-mix(in srgb,${color} 10%,transparent)">${label} (${list.length})</td></tr>${mkRows(list,type)}`;
+  const section=(list,type,secId,label,color)=>!list.length?'':
+    `<tr id="${secId}"><td colspan="2" style="padding:6px 10px;font-size:11px;font-weight:700;color:${color};background:color-mix(in srgb,${color} 10%,transparent);position:sticky;top:37px;z-index:1">${label} (${list.length})</td></tr>${mkRows(list,type)}`;
 
   const total=REL_MATCHED.length+REL_UNCERTAIN.length+REL_NOT_FOUND.length;
   document.getElementById('rel-result').innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
-      <div style="background:var(--s2);border-radius:8px;padding:11px 14px">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+      <div onclick="relScrollTo('rel-sec-matched')" style="background:var(--s2);border-radius:8px;padding:11px 14px;cursor:pointer;border:1px solid transparent;transition:border-color .15s" onmouseenter="this.style.borderColor='var(--teal)'" onmouseleave="this.style.borderColor='transparent'">
         <div style="font-size:11px;color:var(--tx3)">✅ Identificados</div>
         <div style="font-weight:700;font-size:20px;color:var(--teal)">${REL_MATCHED.length}</div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:2px">clique para ir ↓</div>
       </div>
-      <div style="background:var(--s2);border-radius:8px;padding:11px 14px">
+      <div onclick="relScrollTo('rel-sec-uncertain')" style="background:var(--s2);border-radius:8px;padding:11px 14px;cursor:pointer;border:1px solid transparent;transition:border-color .15s" onmouseenter="this.style.borderColor='var(--orange)'" onmouseleave="this.style.borderColor='transparent'">
         <div style="font-size:11px;color:var(--tx3)">⚠️ Incertos</div>
         <div style="font-weight:700;font-size:20px;color:var(--orange)">${REL_UNCERTAIN.length}</div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:2px">clique para ir ↓</div>
       </div>
-      <div style="background:var(--s2);border-radius:8px;padding:11px 14px">
+      <div onclick="relScrollTo('rel-sec-notfound')" style="background:var(--s2);border-radius:8px;padding:11px 14px;cursor:pointer;border:1px solid transparent;transition:border-color .15s" onmouseenter="this.style.borderColor='var(--red)'" onmouseleave="this.style.borderColor='transparent'">
         <div style="font-size:11px;color:var(--tx3)">❌ Não encontrados</div>
         <div style="font-weight:700;font-size:20px;color:var(--red)">${REL_NOT_FOUND.length}</div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:2px">clique para ir ↓</div>
       </div>
     </div>
     ${total===0?`<div style="color:var(--tx2);padding:20px 0">Nenhum recebimento relacionado a lançamentos pendentes.</div>`:`
-    <div style="max-height:380px;overflow-y:auto;border:1px solid var(--br);border-radius:8px;margin-bottom:14px">
+    <div id="rel-tbl-scroll" style="max-height:400px;overflow-y:auto;border:1px solid var(--br);border-radius:8px;margin-bottom:14px">
       <table style="width:100%;border-collapse:collapse">
-        <thead style="position:sticky;top:0;background:var(--s3);z-index:1">
+        <thead style="position:sticky;top:0;background:var(--s3);z-index:2">
           <tr>
             <th style="padding:8px;text-align:center;font-size:12px;color:var(--tx3);width:36px">✓</th>
             <th style="padding:8px;text-align:left;font-size:12px;color:var(--tx3)">Recebimento</th>
-            <th style="padding:8px;text-align:right;font-size:12px;color:var(--tx3)">Valor</th>
           </tr>
         </thead>
         <tbody>
-          ${section(REL_MATCHED,'matched','✅ IDENTIFICADOS','var(--teal)')}
-          ${section(REL_UNCERTAIN,'uncertain','⚠️ INCERTOS','var(--orange)')}
-          ${section(REL_NOT_FOUND,'notfound','❌ NÃO ENCONTRADOS','var(--red)')}
+          ${section(REL_MATCHED,'matched','rel-sec-matched','✅ IDENTIFICADOS','var(--teal)')}
+          ${section(REL_UNCERTAIN,'uncertain','rel-sec-uncertain','⚠️ INCERTOS','var(--orange)')}
+          ${section(REL_NOT_FOUND,'notfound','rel-sec-notfound','❌ NÃO ENCONTRADOS','var(--red)')}
         </tbody>
       </table>
     </div>
@@ -4183,6 +4206,9 @@ function renderRelPreview(){
     </div>
     `}
   `;
+  // Restore scroll position after re-render
+  const scNew=document.getElementById('rel-tbl-scroll');
+  if(scNew)scNew.scrollTop=savedScroll;
 }
 
 function relToggle(type,idx,checked){
