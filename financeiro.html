@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"/>
@@ -4012,50 +4012,11 @@ function _normName(s){
   return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
 }
 
-function parseRelatorioXLSX(wb){
-  const ws=wb.Sheets[wb.SheetNames[0]];
-  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
-  const entries=[];
-  for(let i=0;i<rows.length;i++){
-    const r=rows[i];
-    // Main data row: col A (0) = numeric client code, col J (9) = vencimento serial
-    const cod=r[0];
-    const venSerial=r[9];
-    if(!cod||isNaN(Number(cod))||Number(cod)<1)continue;
-    if(!venSerial||isNaN(Number(venSerial))||Number(venSerial)<40000)continue;
-    // W(22) = service description; C(2) and G(6) = client name candidates
-    const desc=String(r[22]||'').trim();
-    let clientName='';
-    for(const ci of[6,2]){
-      const s=String(r[ci]||'').trim();
-      if(s&&isNaN(Number(s))&&s.length>2&&!s.startsWith('Total')&&!s.startsWith('Seq')){clientName=s;break;}
-    }
-    // Fallback: if no name found in C/G, use desc
-    if(!clientName)clientName=desc;
-    const dataRec=_xlToISO(r[17]);
-    const valorRec=Number(r[36])||0;
-    const juros=Number(r[27])||0;
-    // Only include rows that were actually received
-    if(!dataRec||valorRec===0)continue;
-    entries.push({
-      cod:Number(cod),clientName,desc,
-      competencia:_xlToISO(r[5]),
-      vencimento:_xlToISO(Number(venSerial)),
-      dataRec,
-      valorFat:Number(r[11])||0,
-      valorRec,juros,
-      descontos:Number(r[30])||0,
-      retencoes:Number(r[32])||0
-    });
-  }
-  return entries;
-}
-
 function _nameScore(a,b){
   const na=_normName(a),nb=_normName(b);
   if(!na||!nb)return 0;
   if(na===nb)return 1;
-  if(na.includes(nb)||nb.includes(na))return 0.85;
+  if(na.includes(nb)||nb.includes(na))return 0.9;
   const wa=new Set(na.split(' ').filter(w=>w.length>2));
   const wb2=nb.split(' ').filter(w=>w.length>2);
   if(!wa.size||!wb2.length)return 0;
@@ -4063,48 +4024,92 @@ function _nameScore(a,b){
   return hits/Math.max(wa.size,wb2.length);
 }
 
+function _bestNameScore(cands,pDesc){
+  return Math.max(0,...(cands||[]).map(n=>_nameScore(n,pDesc)));
+}
+
+function parseRelatorioXLSX(wb){
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+  const isGoodName=s=>{
+    s=String(s||'').trim();
+    return s.length>3&&isNaN(Number(s))&&!/^\d/.test(s)&&!s.startsWith('Total')&&!s.startsWith('Seq');
+  };
+  const rowCands=r=>{
+    const out=[];
+    for(const ci of[2,3,6,7,8,22]){
+      const s=String(r[ci]||'').trim();
+      if(isGoodName(s)&&!out.includes(s))out.push(s);
+    }
+    return out;
+  };
+  const entries=[];
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i];
+    const cod=r[0],venSerial=r[9];
+    if(!cod||isNaN(Number(cod))||Number(cod)<1)continue;
+    if(!venSerial||isNaN(Number(venSerial))||Number(venSerial)<40000)continue;
+    const desc=String(r[22]||'').trim();
+    // Prefer columns other than desc for client name
+    let nameCandidates=rowCands(r).filter(s=>_normName(s)!==_normName(desc));
+    if(!nameCandidates.length){
+      // Search backward up to 8 rows for a name header row
+      for(let j=i-1;j>=Math.max(0,i-8);j--){
+        const pr=rows[j];
+        if(pr[0]&&!isNaN(Number(pr[0]))&&Number(pr[0])>0&&pr[9]&&!isNaN(Number(pr[9]))&&Number(pr[9])>40000)break;
+        const pc=rowCands(pr).filter(s=>_normName(s)!==_normName(desc));
+        if(pc.length){nameCandidates=pc;break;}
+      }
+    }
+    if(!nameCandidates.includes(desc))nameCandidates.push(desc);
+    const clientName=nameCandidates[0]||desc;
+    const dataRec=_xlToISO(r[17]);
+    const valorRec=Number(r[36])||0;
+    const juros=Number(r[27])||0;
+    if(!dataRec||valorRec===0)continue;
+    entries.push({
+      cod:Number(cod),clientName,desc,nameCandidates,
+      competencia:_xlToISO(r[5]),
+      vencimento:_xlToISO(Number(venSerial)),
+      dataRec,valorFat:Number(r[11])||0,
+      valorRec,juros,
+      descontos:Number(r[30])||0,retencoes:Number(r[32])||0
+    });
+  }
+  return entries;
+}
+
 function matchRelatorio(relEntries){
   const pending=DATA.filter(d=>d.tipo==='R'&&d.status==='Pendente');
   const matched=[],uncertain=[],notFound=[];
   const usedIds=new Set();
   for(const rel of relEntries){
-    let best=null,bestScore=0,bestVenOk=false,bestNameScore=0;
+    let best=null,bestScore=-999,bestVenOk=false,bestNameScore=0;
     for(const p of pending){
       if(usedIds.has(p.id))continue;
-      let score=0;
-      // 1. Vencimento — critério obrigatório
-      const venOk=!!(rel.vencimento&&p.dataPgto&&rel.vencimento.slice(0,7)===p.dataPgto.slice(0,7));
-      if(rel.vencimento&&p.dataPgto){
-        if(rel.vencimento===p.dataPgto)score+=5;
-        else if(venOk)score+=2;
-        else score-=4; // mês errado: penalidade forte
-      }
-      // 2. Nome — critério obrigatório
-      const ns=_nameScore(rel.clientName,p.desc||'');
-      score+=ns*4; // peso maior para nome
-      // 3. Valor (valorRec - juros vs valorLiq)
+      const venExact=!!(rel.vencimento&&p.dataPgto&&rel.vencimento===p.dataPgto);
+      const venMonthOk=!!(rel.vencimento&&p.dataPgto&&rel.vencimento.slice(0,7)===p.dataPgto.slice(0,7));
+      let score=venExact?6:venMonthOk?3:-6;
+      const ns=_bestNameScore(rel.nameCandidates,p.desc||'');
+      score+=ns*5;
       const pVal=Number(p.valorLiq)||Number(p.valorBruto)||0;
       const relBase=rel.valorRec-rel.juros;
       if(pVal>0){
         const diff=Math.abs(pVal-relBase)/pVal;
-        if(diff<0.01)score+=3;
-        else if(diff<0.05)score+=2;
-        else if(diff<0.20)score+=1;
+        if(diff<0.01)score+=3;else if(diff<0.05)score+=2;else if(diff<0.30)score+=1;
       }
-      // 4. Competência
       if(rel.competencia&&p.dataComp&&rel.competencia.slice(0,7)===p.dataComp.slice(0,7))score+=1;
-      if(score>bestScore){bestScore=score;best=p;bestVenOk=venOk;bestNameScore=ns;}
+      if(score>bestScore){bestScore=score;best=p;bestVenOk=venMonthOk;bestNameScore=ns;}
     }
-    // "Identificado" exige: score alto + vencimento no mesmo mês + nome com similaridade mínima
-    const nameOk=bestNameScore>=0.35;
-    if(!best||bestScore<3){
-      notFound.push({rel,selected:false});
-    }else if(bestScore>=7&&bestVenOk&&nameOk){
+    const nameOk=bestNameScore>=0.4;
+    if(!best||bestScore<2){
+      notFound.push({rel,match:null,selected:false,manualSet:false});
+    }else if(bestScore>=8&&bestVenOk&&nameOk){
       usedIds.add(best.id);
-      matched.push({rel,match:best,selected:true});
+      matched.push({rel,match:best,selected:true,manualSet:false});
     }else{
       usedIds.add(best.id);
-      uncertain.push({rel,match:best,selected:false,score:bestScore});
+      uncertain.push({rel,match:best,selected:false,manualSet:false,score:bestScore});
     }
   }
   return{matched,uncertain,notFound};
@@ -4122,6 +4127,75 @@ function _relJurosCat(){
   return{cat:'Receitas Financeiras',sub:'Juros e Multas por Atrasos'};
 }
 
+// ── SELECAO MANUAL ──────────────────────────────────────────────────────────
+let REL_MANUAL_OPEN=null;
+
+function relOpenManual(type,idx){
+  if(REL_MANUAL_OPEN&&REL_MANUAL_OPEN.type===type&&REL_MANUAL_OPEN.idx===idx){
+    REL_MANUAL_OPEN=null;
+  }else{
+    REL_MANUAL_OPEN={type,idx,filter:''};
+  }
+  renderRelPreview();
+}
+
+function relManualFilter(val){
+  if(REL_MANUAL_OPEN)REL_MANUAL_OPEN.filter=val;
+  renderRelPreview();
+}
+
+function relSetManual(pendingId){
+  if(!REL_MANUAL_OPEN)return;
+  const{type,idx}=REL_MANUAL_OPEN;
+  const lists={matched:REL_MATCHED,uncertain:REL_UNCERTAIN,notfound:REL_NOT_FOUND};
+  const item=lists[type]?.[idx];
+  if(!item)return;
+  const p=DATA.find(d=>d.id===pendingId);
+  if(!p)return;
+  item.match=p;item.selected=true;item.manualSet=true;
+  if(type==='notfound'){REL_NOT_FOUND.splice(idx,1);REL_UNCERTAIN.push(item);}
+  REL_MANUAL_OPEN=null;
+  renderRelPreview();
+}
+
+function relClearManual(type,idx){
+  const lists={matched:REL_MATCHED,uncertain:REL_UNCERTAIN};
+  const item=lists[type]?.[idx];
+  if(item){item.manualSet=false;item.selected=false;item.match=null;}
+  renderRelPreview();
+}
+
+function _relManualPanel(type,idx){
+  const usedIds=new Set([
+    ...REL_MATCHED.map((r,i)=>(type==='matched'&&i===idx)?null:r.match?.id),
+    ...REL_UNCERTAIN.map((r,i)=>(type==='uncertain'&&i===idx)?null:r.match?.id),
+  ].filter(Boolean));
+  const filter=_normName(REL_MANUAL_OPEN?.filter||'');
+  const fmtD=iso=>iso?iso.split('-').reverse().join('/'):'?';
+  const pending=DATA.filter(d=>d.tipo==='R'&&d.status==='Pendente'&&!usedIds.has(d.id));
+  const filtered=filter?pending.filter(p=>_normName(p.desc||'').includes(filter)||(p.dataPgto||'').includes(REL_MANUAL_OPEN?.filter||'')):pending;
+  const rows=filtered.slice(0,40).map(p=>`
+    <div onclick="relSetManual('${p.id}')" style="padding:7px 10px;cursor:pointer;border-bottom:1px solid var(--br);display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center" onmouseenter="this.style.background='var(--s3)'" onmouseleave="this.style.background=''">
+      <div>
+        <div style="font-size:12.5px;font-weight:600;color:var(--tx)">${p.desc||'?'}</div>
+        <div style="font-size:11px;color:var(--tx2)">Venc: ${fmtD(p.dataPgto)} | Comp: ${(p.dataComp||'').slice(0,7)} | ${p.cat||''}${p.sub?` > ${p.sub}`:''}</div>
+      </div>
+      <div style="font-size:13px;font-weight:700;color:var(--teal);white-space:nowrap">${fmt(Number(p.valorLiq)||0)}</div>
+    </div>`).join('');
+  return`<div style="margin-top:6px;border:1px solid var(--blue);border-radius:7px;overflow:hidden">
+    <div style="background:color-mix(in srgb,var(--blue) 12%,transparent);padding:7px 10px;display:flex;align-items:center;gap:8px">
+      <span style="font-size:11px;font-weight:700;color:var(--blue)">Selecionar lancamento</span>
+      <input type="text" placeholder="Buscar por nome..." value="${REL_MANUAL_OPEN?.filter||''}" oninput="relManualFilter(this.value)" style="flex:1;padding:4px 8px;border-radius:5px;border:1px solid var(--br);background:var(--s2);color:var(--tx);font-size:12px">
+      <button onclick="relOpenManual('${type}',${idx})" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:16px;line-height:1">&times;</button>
+    </div>
+    <div style="max-height:200px;overflow-y:auto;background:var(--s2)">
+      ${rows||'<div style="padding:10px;color:var(--tx3);font-size:12px">Nenhum lancamento pendente encontrado</div>'}
+      ${filtered.length>40?`<div style="padding:7px 10px;font-size:11px;color:var(--tx3)">...e mais ${filtered.length-40}. Refine a busca.</div>`:''}
+    </div>
+  </div>`;
+}
+
+// ── RENDER ──────────────────────────────────────────────────────────────────
 function relScrollTo(secId){
   const el=document.getElementById(secId);
   const sc=document.getElementById('rel-tbl-scroll');
@@ -4129,45 +4203,51 @@ function relScrollTo(secId){
 }
 
 function renderRelPreview(){
-  // Preserve scroll position across re-renders
   const sc=document.getElementById('rel-tbl-scroll');
   const savedScroll=sc?sc.scrollTop:0;
-
-  const selCount=REL_MATCHED.filter(r=>r.selected).length+REL_UNCERTAIN.filter(r=>r.selected).length;
-  const totalVal=[...REL_MATCHED,...REL_UNCERTAIN].filter(r=>r.selected).reduce((s,r)=>s+r.rel.valorRec,0);
-  const totalJuros=[...REL_MATCHED,...REL_UNCERTAIN].filter(r=>r.selected).reduce((s,r)=>s+r.rel.juros,0);
-
+  const selAll=[...REL_MATCHED,...REL_UNCERTAIN,...REL_NOT_FOUND].filter(r=>r.selected);
+  const selCount=selAll.length;
+  const totalVal=selAll.reduce((s,r)=>s+r.rel.valorRec,0);
+  const totalJuros=selAll.reduce((s,r)=>s+r.rel.juros,0);
   const fmtD=iso=>iso?iso.split('-').reverse().join('/'):'?';
 
   const mkRows=(list,type)=>list.map((item,i)=>{
-    const{rel,match,selected}=item;
-    // Vencimento match check — usado para alertas visuais
+    const{rel,match,selected,manualSet}=item;
     const venMismatch=match&&rel.vencimento&&match.dataPgto&&rel.vencimento.slice(0,7)!==match.dataPgto.slice(0,7);
-    const valMismatch=match&&(()=>{const pVal=Number(match.valorLiq)||0;const relBase=rel.valorRec-rel.juros;return pVal>0&&Math.abs(pVal-relBase)/pVal>0.05;})();
-    // Relatório block (blue tint)
+    const pVal=Number(match?.valorLiq)||0;const relBase=rel.valorRec-rel.juros;
+    const valMismatch=match&&pVal>0&&Math.abs(pVal-relBase)/pVal>0.05;
     const jurosTag=rel.juros>0?`<span style="font-size:10px;background:color-mix(in srgb,var(--orange) 18%,transparent);color:var(--orange);padding:1px 6px;border-radius:10px;margin-left:5px">+${fmt(rel.juros)} juros</span>`:'';
     const descLine=rel.desc&&rel.desc!==rel.clientName?`<div style="font-size:11.5px;color:var(--tx2);margin-top:1px">${rel.desc}</div>`:'';
-    const relBlock=`
-      <div style="border-radius:5px;padding:5px 8px;margin-bottom:3px;background:color-mix(in srgb,var(--blue) 7%,transparent);border-left:2px solid var(--blue)">
-        <div style="font-size:9.5px;font-weight:700;color:var(--blue);letter-spacing:.4px;margin-bottom:2px">📋 RELATÓRIO DOMÍNIO</div>
-        <div style="font-size:12.5px;font-weight:600;color:var(--tx)">${rel.clientName||'(sem nome)'}</div>
-        ${descLine}
-        <div style="font-size:11px;color:var(--tx2);margin-top:2px">Comp: <b>${rel.competencia?rel.competencia.slice(0,7):'?'}</b> &nbsp;|&nbsp; Venc: <b style="${venMismatch?'color:var(--red)':''}">${fmtD(rel.vencimento)}</b> &nbsp;|&nbsp; Rec: <b>${fmtD(rel.dataRec)}</b> &nbsp;|&nbsp; <b style="${valMismatch?'color:var(--orange)':''}">${fmt(rel.valorRec)}</b>${jurosTag}</div>
-      </div>`;
-    // Sistema block (teal tint) — only for matched/uncertain
-    const sysBlock=match?`
-      <div style="border-radius:5px;padding:5px 8px;background:color-mix(in srgb,var(--teal) 7%,transparent);border-left:2px solid var(--teal)">
-        <div style="font-size:9.5px;font-weight:700;color:var(--teal);letter-spacing:.4px;margin-bottom:2px">🗂️ LANÇAMENTO NO SISTEMA</div>
-        <div style="font-size:12.5px;color:var(--tx)">${match.desc||'?'}</div>
-        <div style="font-size:11px;color:var(--tx2);margin-top:1px">Comp: <b>${match.dataComp?match.dataComp.slice(0,7):'?'}</b> &nbsp;|&nbsp; Venc: <b style="${venMismatch?'color:var(--red)':''}">${fmtD(match.dataPgto)}</b> &nbsp;|&nbsp; Valor: <b style="${valMismatch?'color:var(--orange)':''}">${fmt(Number(match.valorLiq)||0)}</b> &nbsp;|&nbsp; ${match.cat||''}${match.sub?` › ${match.sub}`:''}</div>
-      </div>`:'';
-    const badge=type==='uncertain'?`<span style="font-size:10px;background:color-mix(in srgb,var(--orange) 15%,transparent);color:var(--orange);padding:1px 7px;border-radius:10px;display:inline-block;margin-bottom:4px">⚠️ baixa confiança</span><br>`:'';
-    const chkCell=type==='notfound'
-      ?`<td style="padding:8px 6px;text-align:center;color:var(--tx3);vertical-align:top;padding-top:14px">—</td>`
-      :`<td style="padding:8px 6px;text-align:center;vertical-align:top;padding-top:14px"><input type="checkbox" ${selected?'checked':''} onchange="relToggle('${type}',${i},this.checked)"></td>`;
+    const relBlock=`<div style="border-radius:5px;padding:5px 8px;margin-bottom:3px;background:color-mix(in srgb,var(--blue) 7%,transparent);border-left:2px solid var(--blue)">
+      <div style="font-size:9.5px;font-weight:700;color:var(--blue);letter-spacing:.4px;margin-bottom:2px">RELATORIO DOMINIO</div>
+      <div style="font-size:12.5px;font-weight:600;color:var(--tx)">${rel.clientName||'(sem nome)'}</div>
+      ${descLine}
+      <div style="font-size:11px;color:var(--tx2);margin-top:2px">Comp: <b>${rel.competencia?rel.competencia.slice(0,7):'?'}</b> | Venc: <b style="${venMismatch?'color:var(--red)':''}">${fmtD(rel.vencimento)}</b> | Rec: <b>${fmtD(rel.dataRec)}</b> | <b style="${valMismatch?'color:var(--orange)':''}">${fmt(rel.valorRec)}</b>${jurosTag}</div>
+    </div>`;
+    const sysBlock=match?`<div style="border-radius:5px;padding:5px 8px;background:color-mix(in srgb,var(--teal) 7%,transparent);border-left:2px solid var(--teal)">
+      <div style="font-size:9.5px;font-weight:700;color:var(--teal);letter-spacing:.4px;margin-bottom:2px">LANCAMENTO NO SISTEMA</div>
+      <div style="font-size:12.5px;color:var(--tx)">${match.desc||'?'}</div>
+      <div style="font-size:11px;color:var(--tx2);margin-top:1px">Comp: <b>${(match.dataComp||'').slice(0,7)||'?'}</b> | Venc: <b style="${venMismatch?'color:var(--red)':''}">${fmtD(match.dataPgto)}</b> | Valor: <b style="${valMismatch?'color:var(--orange)':''}">${fmt(Number(match.valorLiq)||0)}</b> | ${match.cat||''}${match.sub?` > ${match.sub}`:''}</div>
+    </div>`
+    :`<div style="border-radius:5px;padding:5px 8px;background:color-mix(in srgb,var(--red) 7%,transparent);border-left:2px solid var(--red)">
+      <div style="font-size:9.5px;font-weight:700;color:var(--red);margin-bottom:2px">SISTEMA</div>
+      <div style="font-size:12px;color:var(--tx3)">Nenhum lancamento encontrado automaticamente</div>
+    </div>`;
+    const manualOpen=REL_MANUAL_OPEN&&REL_MANUAL_OPEN.type===type&&REL_MANUAL_OPEN.idx===i;
+    const manualPanel=manualOpen?_relManualPanel(type,i):'';
+    const manualBtn=manualSet
+      ?`<button onclick="relClearManual('${type}',${i})" style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--red);background:none;color:var(--red);cursor:pointer;margin-top:4px;display:block">x Remover selecao</button>`
+      :`<button onclick="relOpenManual('${type}',${i})" style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--blue);background:none;color:var(--blue);cursor:pointer;margin-top:4px;display:block">${manualOpen?'Fechar':'Selecionar lancamento'}</button>`;
+    const canCheck=type!=='notfound'||manualSet;
+    const chkCell=canCheck
+      ?`<td style="padding:8px 6px;text-align:center;vertical-align:top;padding-top:14px"><input type="checkbox" ${selected?'checked':''} onchange="relToggle('${type}',${i},this.checked)"></td>`
+      :`<td style="padding:8px 6px;text-align:center;vertical-align:top;padding-top:14px;color:var(--tx3)">-</td>`;
+    const badge=type==='uncertain'&&!manualSet
+      ?`<span style="font-size:10px;background:color-mix(in srgb,var(--orange) 15%,transparent);color:var(--orange);padding:1px 7px;border-radius:10px;display:inline-block;margin-bottom:4px">incerto</span><br>`
+      :manualSet?`<span style="font-size:10px;background:color-mix(in srgb,var(--blue) 15%,transparent);color:var(--blue);padding:1px 7px;border-radius:10px;display:inline-block;margin-bottom:4px">selecao manual</span><br>`:'';
     return`<tr style="border-bottom:1px solid var(--br);${selected?'background:color-mix(in srgb,var(--blue) 5%,transparent)':''}">
       ${chkCell}
-      <td style="padding:8px 8px 8px 4px">${badge}${relBlock}${sysBlock}</td>
+      <td style="padding:8px 8px 8px 4px">${badge}${relBlock}${sysBlock}${manualBtn}${manualPanel}</td>
     </tr>`;
   }).join('');
 
@@ -4178,34 +4258,34 @@ function renderRelPreview(){
   document.getElementById('rel-result').innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
       <div onclick="relScrollTo('rel-sec-matched')" style="background:var(--s2);border-radius:8px;padding:11px 14px;cursor:pointer;border:1px solid transparent;transition:border-color .15s" onmouseenter="this.style.borderColor='var(--teal)'" onmouseleave="this.style.borderColor='transparent'">
-        <div style="font-size:11px;color:var(--tx3)">✅ Identificados</div>
+        <div style="font-size:11px;color:var(--tx3)">Identificados</div>
         <div style="font-weight:700;font-size:20px;color:var(--teal)">${REL_MATCHED.length}</div>
-        <div style="font-size:10px;color:var(--tx3);margin-top:2px">clique para ir ↓</div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:2px">clique para ir</div>
       </div>
       <div onclick="relScrollTo('rel-sec-uncertain')" style="background:var(--s2);border-radius:8px;padding:11px 14px;cursor:pointer;border:1px solid transparent;transition:border-color .15s" onmouseenter="this.style.borderColor='var(--orange)'" onmouseleave="this.style.borderColor='transparent'">
-        <div style="font-size:11px;color:var(--tx3)">⚠️ Incertos</div>
+        <div style="font-size:11px;color:var(--tx3)">Incertos</div>
         <div style="font-weight:700;font-size:20px;color:var(--orange)">${REL_UNCERTAIN.length}</div>
-        <div style="font-size:10px;color:var(--tx3);margin-top:2px">clique para ir ↓</div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:2px">clique para ir</div>
       </div>
       <div onclick="relScrollTo('rel-sec-notfound')" style="background:var(--s2);border-radius:8px;padding:11px 14px;cursor:pointer;border:1px solid transparent;transition:border-color .15s" onmouseenter="this.style.borderColor='var(--red)'" onmouseleave="this.style.borderColor='transparent'">
-        <div style="font-size:11px;color:var(--tx3)">❌ Não encontrados</div>
+        <div style="font-size:11px;color:var(--tx3)">Nao encontrados</div>
         <div style="font-weight:700;font-size:20px;color:var(--red)">${REL_NOT_FOUND.length}</div>
-        <div style="font-size:10px;color:var(--tx3);margin-top:2px">clique para ir ↓</div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:2px">clique para ir</div>
       </div>
     </div>
-    ${total===0?`<div style="color:var(--tx2);padding:20px 0">Nenhum recebimento relacionado a lançamentos pendentes.</div>`:`
-    <div id="rel-tbl-scroll" style="max-height:400px;overflow-y:auto;border:1px solid var(--br);border-radius:8px;margin-bottom:14px">
+    ${total===0?`<div style="color:var(--tx2);padding:20px 0">Nenhum recebimento relacionado a lancamentos pendentes.</div>`:`
+    <div id="rel-tbl-scroll" style="max-height:420px;overflow-y:auto;border:1px solid var(--br);border-radius:8px;margin-bottom:14px">
       <table style="width:100%;border-collapse:collapse">
         <thead style="position:sticky;top:0;background:var(--s3);z-index:2">
           <tr>
-            <th style="padding:8px;text-align:center;font-size:12px;color:var(--tx3);width:36px">✓</th>
+            <th style="padding:8px;text-align:center;font-size:12px;color:var(--tx3);width:36px">sel</th>
             <th style="padding:8px;text-align:left;font-size:12px;color:var(--tx3)">Recebimento</th>
           </tr>
         </thead>
         <tbody>
-          ${section(REL_MATCHED,'matched','rel-sec-matched','✅ IDENTIFICADOS','var(--teal)')}
-          ${section(REL_UNCERTAIN,'uncertain','rel-sec-uncertain','⚠️ INCERTOS','var(--orange)')}
-          ${section(REL_NOT_FOUND,'notfound','rel-sec-notfound','❌ NÃO ENCONTRADOS','var(--red)')}
+          ${section(REL_MATCHED,'matched','rel-sec-matched','IDENTIFICADOS','var(--teal)')}
+          ${section(REL_UNCERTAIN,'uncertain','rel-sec-uncertain','INCERTOS','var(--orange)')}
+          ${section(REL_NOT_FOUND,'notfound','rel-sec-notfound','NAO ENCONTRADOS','var(--red)')}
         </tbody>
       </table>
     </div>
@@ -4214,34 +4294,32 @@ function renderRelPreview(){
         <strong>${selCount}</strong> selecionado(s) | Valor: <strong style="color:var(--teal)">${fmt(totalVal)}</strong>${totalJuros>0?` | Juros: <strong style="color:var(--orange)">${fmt(totalJuros)}</strong>`:''}
       </div>
       <button class="btn btn-pri" id="rel-confirm-btn" onclick="confirmarBaixarRel()" ${selCount===0?'disabled':''}>
-        ✅ Baixar ${selCount} recebimento(s)
+        Baixar ${selCount} recebimento(s)
       </button>
     </div>
     `}
   `;
-  // Restore scroll position after re-render
   const scNew=document.getElementById('rel-tbl-scroll');
   if(scNew)scNew.scrollTop=savedScroll;
 }
 
 function relToggle(type,idx,checked){
-  if(type==='matched')REL_MATCHED[idx].selected=checked;
-  else if(type==='uncertain')REL_UNCERTAIN[idx].selected=checked;
+  const lists={matched:REL_MATCHED,uncertain:REL_UNCERTAIN,notfound:REL_NOT_FOUND};
+  if(lists[type]?.[idx])lists[type][idx].selected=checked;
   renderRelPreview();
 }
 
 async function confirmarBaixarRel(){
-  const toProcess=[...REL_MATCHED,...REL_UNCERTAIN].filter(r=>r.selected);
+  const toProcess=[...REL_MATCHED,...REL_UNCERTAIN,...REL_NOT_FOUND].filter(r=>r.selected&&r.match);
   if(!toProcess.length)return;
   const btn=document.getElementById('rel-confirm-btn');
-  if(btn){btn.disabled=true;btn.textContent='⏳ Processando...';}
+  if(btn){btn.disabled=true;btn.textContent='Processando...';}
   const conta=REL_CONTA||CONTAS[0]||'Caixa';
   const{cat:jCat,sub:jSub}=_relJurosCat();
   let ok=0,err=0;
   for(const item of toProcess){
     const{rel,match}=item;
     try{
-      // Update existing entry: mark Recebido, set date and conta
       const valorBase=rel.valorRec-rel.juros;
       const updated={...match,
         status:'Recebido',
@@ -4252,25 +4330,17 @@ async function confirmarBaixarRel(){
       await dbUpdate(updated);
       const di=DATA.findIndex(d=>d.id===match.id);
       if(di>=0)DATA[di]={...DATA[di],status:'Recebido',dataPgto:rel.dataRec,valorLiq:updated.valorLiq,conta};
-      // Insert juros entry if applicable
       if(rel.juros>0){
         const jEntry={
-          tipo:'R',
-          dataComp:rel.competencia||rel.dataRec,
-          dataPgto:rel.dataRec,
-          desc:`Juros/Multa — ${match.desc||rel.clientName}`,
+          tipo:'R',dataComp:rel.competencia||rel.dataRec,dataPgto:rel.dataRec,
+          desc:`Juros/Multa - ${match.desc||rel.clientName}`,
           cat:jCat,sub:jSub,
           valorBruto:rel.juros,ded:0,valorLiq:rel.juros,
-          forma:match.forma||'PIX',
-          conta,
-          status:'Recebido',
-          obs:`Ref.: ${match.desc||rel.clientName} — venc. ${rel.vencimento||''}`
+          forma:match.forma||'PIX',conta,status:'Recebido',
+          obs:`Ref.: ${match.desc||rel.clientName} - venc. ${rel.vencimento||''}`
         };
         const saved=await dbInsert(jEntry);
-        if(saved){
-          const newEntry=fromRow({...toRow(jEntry),id:saved.id||('j-'+Date.now())});
-          DATA.unshift(newEntry);
-        }
+        if(saved){DATA.unshift(fromRow({...toRow(jEntry),id:saved.id||('j-'+Date.now())}));}
       }
       ok++;
     }catch(e){err++;console.error('Erro ao baixar:',e);}
@@ -4280,6 +4350,7 @@ async function confirmarBaixarRel(){
   toast(`${ok} recebimento(s) baixado(s)${err?`, ${err} erro(s)`:''}`,ok>0?'ok':'err');
   closeBaixarRelModal();
 }
+
 </script>
 </body>
 </html>
