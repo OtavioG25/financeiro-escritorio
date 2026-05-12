@@ -305,6 +305,12 @@ input::placeholder{color:var(--tx3)}
 <div class="overlay" id="overlay" style="display:none">
   <div class="modal modal-lancamento"><div class="modal-hdr"><h2 id="modal-ttl">Novo Lançamento</h2><button class="cls" onclick="closeForm()">✕</button></div><div class="fgrid" id="fgrid"></div></div>
 </div>
+<div class="overlay" id="parcial-overlay" style="display:none" onclick="if(event.target===this)closeParcialModal()">
+  <div class="modal" style="max-width:580px">
+    <div class="modal-hdr"><h2>◐ Pagamento Parcial</h2><button class="cls" onclick="closeParcialModal()">✕</button></div>
+    <div id="parcial-body" style="padding:18px 22px"></div>
+  </div>
+</div>
 <div class="overlay" id="transf-overlay" style="display:none" onclick="if(event.target===this)closeTransfModal()">
   <div class="modal" style="max-width:500px">
     <div class="modal-hdr"><h2>↔ Nova Transferência</h2><button class="cls" onclick="closeTransfModal()">✕</button></div>
@@ -312,7 +318,7 @@ input::placeholder{color:var(--tx3)}
   </div>
 </div>
 <script>
-const APP_VERSION = 'v2.5.79';
+const APP_VERSION = 'v2.5.80';
 const APP_DATE = '2026-05-06';
 
 // Preenche versão na tela
@@ -2505,68 +2511,195 @@ function validateCatSub(tipo, cat, sub){
   return null;
 }
 
-async function baixarParcial(){
+// ── MODAL PAGAMENTO PARCIAL ────────────────────────────────────────────────
+let _parcialCtx=null; // {original, totalOriginal, jaPago, pendente, canonicalComp, acaoTxt}
+let _parcialRows=[]; // [{valor, conta, data}]
+
+function closeParcialModal(){document.getElementById('parcial-overlay').style.display='none';}
+
+function baixarParcial(){
   if(!editingId){toast('Salve o lançamento antes.','err');return;}
   const original=DATA.find(l=>l.id===editingId);
   if(!original){toast('Lançamento não encontrado.','err');return;}
-
-  // Total original (valorBruto) e já pago (valorLiq se Parcial)
+  const canonicalComp=compFromView(formData.dataCompView)||formData.dataComp;
+  if(!canonicalComp){toast('Informe a competência antes.','err');return;}
+  const catErr=validateCatSub(formData.tipo,formData.cat,formData.sub);
+  if(catErr){toast(catErr,'err');return;}
   const totalOriginal=parseMoney(formData.status==='Parcial'?formData.valorBruto:formData.valorLiq);
   const jaPago=parseMoney(formData.status==='Parcial'?formData.valorLiq:0);
   const pendente=+(totalOriginal-jaPago).toFixed(2);
-  if(pendente<=0){toast('Não há saldo pendente neste lançamento.','err');return;}
+  if(pendente<=0){toast('Não há saldo pendente.','err');return;}
+  _parcialCtx={original,totalOriginal,jaPago,pendente,canonicalComp,acaoTxt:formData.tipo==='R'?'recebido':'pago'};
+  const hoje=new Date().toISOString().slice(0,10);
+  const contaPadrao=normalizeConta(formData.conta)||CONTAS[0]||'';
+  _parcialRows=[{valor:fmtMoneyInput(pendente),conta:contaPadrao,data:hoje}];
+  renderParcialModal();
+  document.getElementById('parcial-overlay').style.display='flex';
+}
 
-  const acaoTxt=formData.tipo==='R'?'recebido':'pago';
-  const valorTxt=prompt(`Valor ${acaoTxt} agora (pendente: ${fmt(pendente)}):`,fmtMoneyInput(pendente));
-  if(valorTxt===null)return;
-  const valorNovo=parseMoney(valorTxt);
-  if(valorNovo<=0||valorNovo>pendente+0.01){toast(`Informe um valor entre R$ 0,01 e ${fmt(pendente)}.`,'err');return;}
+function renderParcialModal(){
+  const{totalOriginal,jaPago,pendente}=_parcialCtx;
+  const totalNovo=_parcialRows.reduce((s,r)=>s+parseMoney(r.valor),0);
+  const saldoApos=+(pendente-totalNovo).toFixed(2);
+  const ok=totalNovo>0&&totalNovo<=pendente+0.005;
+  const contaOpts=CONTAS.map(c=>`<option value="${esc(c)}">{C}</option>`);
 
-  const dataDefault=formData.dataPgto||new Date().toISOString().slice(0,10);
-  const data=prompt(`Data do ${acaoTxt} (AAAA-MM-DD):`,dataDefault);
-  if(data===null)return;
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(data)){toast('Data inválida. Use AAAA-MM-DD.','err');return;}
+  const rowsHtml=_parcialRows.map((r,i)=>`
+    <tr>
+      <td style="padding:6px 4px">
+        <input type="text" inputmode="decimal" value="${esc(r.valor)}"
+          style="width:110px;background:var(--s1);border:1px solid var(--bd2);border-radius:7px;color:var(--tx);padding:6px 8px;font-size:13px"
+          oninput="_parcialRows[${i}].valor=this.value;_parcialUpdateTotals()"
+          onblur="this.value=fmtMoneyInput(parseMoney(this.value));_parcialRows[${i}].valor=this.value;_parcialUpdateTotals()"
+          placeholder="0,00"/>
+      </td>
+      <td style="padding:6px 4px">
+        <select style="background:var(--s1);border:1px solid var(--bd2);border-radius:7px;color:var(--tx);padding:6px 8px;font-size:13px;width:100%"
+          onchange="_parcialRows[${i}].conta=this.value">
+          ${CONTAS.map(c=>`<option value="${esc(c)}"${r.conta===c?' selected':''}>${esc(c)}</option>`).join('')}
+        </select>
+      </td>
+      <td style="padding:6px 4px">
+        <input type="date" value="${r.data}"
+          style="background:var(--s1);border:1px solid var(--bd2);border-radius:7px;color:var(--tx);padding:6px 8px;font-size:13px"
+          onchange="_parcialRows[${i}].data=this.value"/>
+      </td>
+      <td style="padding:6px 4px;text-align:center">
+        ${_parcialRows.length>1?`<button onclick="_parcialRemRow(${i})" style="background:rgba(248,81,73,.1);color:var(--red);border:1px solid rgba(248,81,73,.2);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:13px">✕</button>`:'<span style="display:inline-block;width:32px"></span>'}
+      </td>
+    </tr>`).join('');
 
-  formData.conta=normalizeConta(formData.conta);
-  if(!formData.conta||!CONTAS.includes(formData.conta)){toast('Selecione uma conta bancária.','err');return;}
-  const canonicalComp=compFromView(formData.dataCompView)||formData.dataComp;
-  if(!canonicalComp){toast('Informe a competência.','err');return;}
-  const catErr=validateCatSub(formData.tipo,formData.cat,formData.sub);
-  if(catErr){toast(catErr,'err');return;}
+  document.getElementById('parcial-body').innerHTML=`
+    <div style="background:var(--s2);border:1px solid var(--bd);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px">
+      <div style="font-weight:600;margin-bottom:6px;color:var(--tx)">${esc(_parcialCtx.original.desc||'')}</div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap">
+        <span style="color:var(--tx2)">Total original: <strong style="color:var(--tx)">${fmt(totalOriginal)}</strong></span>
+        ${jaPago>0?`<span style="color:var(--tx2)">Já recebido: <strong style="color:var(--ok)">${fmt(jaPago)}</strong></span>`:''}
+        <span style="color:var(--tx2)">Pendente: <strong style="color:#ff8c00">${fmt(pendente)}</strong></span>
+      </div>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.04em">
+          <th style="padding:4px 4px 8px;text-align:left;font-weight:600">Valor (R$)</th>
+          <th style="padding:4px 4px 8px;text-align:left;font-weight:600">Conta</th>
+          <th style="padding:4px 4px 8px;text-align:left;font-weight:600">Data</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="parcial-rows-tbody">${rowsHtml}</tbody>
+    </table>
+    <button onclick="_parcialAddRow()" style="margin-top:8px;background:none;border:1px dashed var(--bd2);color:var(--tx3);border-radius:7px;padding:6px 14px;cursor:pointer;font-size:12px;width:100%">＋ Adicionar outra conta</button>
+    <div id="parcial-totals" style="margin-top:16px;padding:12px 16px;background:var(--s2);border:1px solid ${ok?'var(--bd)':'rgba(248,81,73,.3)'};border-radius:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div style="font-size:13px">
+        <span style="color:var(--tx2)">Recebendo agora: </span><strong style="color:${ok?'var(--ok)':'var(--red)'};font-size:15px">${fmt(totalNovo)}</strong>
+        <span style="margin-left:16px;color:var(--tx2)">Saldo após: </span><strong style="color:${saldoApos<=0.005?'var(--ok)':'#ff8c00'}">${saldoApos<=0.005?'Quitado ✓':fmt(saldoApos)}</strong>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px">
+      <button class="btn btn-ghost" onclick="closeParcialModal()">Cancelar</button>
+      <button class="btn btn-pri" id="parcial-confirm-btn" ${ok?'':'disabled'} onclick="confirmarParcialModal()" style="min-width:140px">
+        ${saldoApos<=0.005?'✓ Quitar lançamento':'◐ Confirmar pagamento'}
+      </button>
+    </div>`;
+}
 
-  const novoTotalPago=+(jaPago+valorNovo).toFixed(2);
-  const novoSaldoPend=+(totalOriginal-novoTotalPago).toFixed(2);
-  const quitado=novoSaldoPend<=0.005;
-  const novoStatus=quitado?(formData.tipo==='R'?'Recebido':'Pago'):'Parcial';
-  const novoStatus_lbl=quitado?'Quitado ✓':'Parcial — saldo pendente: '+fmt(novoSaldoPend);
+function _parcialUpdateTotals(){
+  const{pendente}=_parcialCtx;
+  const totalNovo=_parcialRows.reduce((s,r)=>s+parseMoney(r.valor),0);
+  const saldoApos=+(pendente-totalNovo).toFixed(2);
+  const ok=totalNovo>0&&totalNovo<=pendente+0.005;
+  const totDiv=document.getElementById('parcial-totals');
+  const btn=document.getElementById('parcial-confirm-btn');
+  if(totDiv){
+    totDiv.style.borderColor=ok?'var(--bd)':'rgba(248,81,73,.3)';
+    totDiv.innerHTML=`<div style="font-size:13px">
+      <span style="color:var(--tx2)">Recebendo agora: </span><strong style="color:${ok?'var(--ok)':'var(--red)'};font-size:15px">${fmt(totalNovo)}</strong>
+      <span style="margin-left:16px;color:var(--tx2)">Saldo após: </span><strong style="color:${saldoApos<=0.005?'var(--ok)':'#ff8c00'}">${saldoApos<=0.005?'Quitado ✓':fmt(saldoApos)}</strong>
+    </div>`;
+  }
+  if(btn){btn.disabled=!ok;btn.textContent=saldoApos<=0.005?'✓ Quitar lançamento':'◐ Confirmar pagamento';}
+}
 
-  if(!confirm(`Confirmar?\n${acaoTxt.charAt(0).toUpperCase()+acaoTxt.slice(1)}: ${fmt(valorNovo)} em ${dateBR(data)}\n${novoStatus_lbl}`))return;
+function _parcialAddRow(){
+  const hoje=new Date().toISOString().slice(0,10);
+  _parcialRows.push({valor:'',conta:CONTAS[0]||'',data:hoje});
+  renderParcialModal();
+}
 
-  const updated={
-    ...original,
-    dataComp:canonicalComp,
-    dataPgto:data,
-    valorBruto:totalOriginal,   // mantém o total original
-    ded:0,
-    valorLiq:novoTotalPago,     // acumula o que foi pago até agora
-    status:novoStatus,
-    obs:[formData.obs||'',`[Parcial ${dateBR(data)}: ${fmt(valorNovo)} | Total pago: ${fmt(novoTotalPago)} de ${fmt(totalOriginal)}]`].filter(Boolean).join(' ')
-  };
+function _parcialRemRow(i){
+  _parcialRows.splice(i,1);
+  renderParcialModal();
+}
 
-  const btn=document.getElementById('save-btn');
+async function confirmarParcialModal(){
+  const{original,totalOriginal,jaPago,canonicalComp,acaoTxt}=_parcialCtx;
+  const rows=_parcialRows.filter(r=>parseMoney(r.valor)>0);
+  if(!rows.length){toast('Informe ao menos um valor.','err');return;}
+  for(const r of rows){
+    if(!r.data||!/^\d{4}-\d{2}-\d{2}$/.test(r.data)){toast('Verifique as datas.','err');return;}
+    if(!r.conta||!CONTAS.includes(r.conta)){toast(`Conta inválida: ${r.conta}`,'err');return;}
+  }
+  const totalNovo=rows.reduce((s,r)=>s+parseMoney(r.valor),0);
+  const novoTotalPago=+(jaPago+totalNovo).toFixed(2);
+  const saldoApos=+(totalOriginal-novoTotalPago).toFixed(2);
+  const quitado=saldoApos<=0.005;
+  const novoStatus=quitado?(original.tipo==='R'?'Recebido':'Pago'):'Parcial';
+
+  const btn=document.getElementById('parcial-confirm-btn');
   if(btn){btn.disabled=true;btn.textContent='Salvando...';}
-  setSyncStatus('loading','Salvando pagamento parcial...');
+  setSyncStatus('loading','Salvando...');
   try{
+    // Cria uma entrada "Recebido" para cada linha de pagamento
+    const dataPrincipal=rows[rows.length-1].data; // data mais recente para o lançamento original
+    const obsExtra=rows.map(r=>`${dateBR(r.data)} ${esc(r.conta)}: ${fmt(parseMoney(r.valor))}`).join(' + ');
+    const updated={
+      ...original,
+      dataComp:canonicalComp,
+      dataPgto:dataPrincipal,
+      valorBruto:totalOriginal,
+      ded:0,
+      valorLiq:novoTotalPago,
+      status:novoStatus,
+      obs:[original.obs||'',`[${quitado?'Quitado':'Parcial'} ${obsExtra}]`].filter(Boolean).join(' ')
+    };
     await dbUpdate(updated);
-    const idx=DATA.findIndex(l=>l.id===editingId);
+    const idx=DATA.findIndex(l=>l.id===original.id);
     if(idx>=0)DATA[idx]={...DATA[idx],...updated};
+
+    // Se múltiplas contas: registra sub-entradas para rastrear cada conta no extrato
+    if(rows.length>1){
+      for(const r of rows){
+        const sub={
+          tipo:original.tipo,
+          dataComp:canonicalComp,
+          dataPgto:r.data,
+          cat:original.cat,sub:original.sub,
+          desc:`${original.desc||''} (parcial)`,
+          forma:original.forma||'PIX',
+          conta:r.conta,
+          valorBruto:parseMoney(r.valor),ded:0,valorLiq:parseMoney(r.valor),
+          status:original.tipo==='R'?'Recebido':'Pago',
+          obs:`Receb. parcial vinculado a: ${original.desc||''} — ${dateBR(r.data)}`
+        };
+        const saved=await dbInsert(sub);
+        if(saved)DATA.unshift(fromRow(saved));
+      }
+    } else {
+      // Conta única: apenas atualiza a conta no lançamento original
+      updated.conta=rows[0].conta;
+      await dbUpdate({...DATA.find(l=>l.id===original.id),...updated,conta:rows[0].conta});
+      const i2=DATA.findIndex(l=>l.id===original.id);
+      if(i2>=0)DATA[i2].conta=rows[0].conta;
+    }
+
     setSyncStatus('ok',`${DATA.length} registros`);
-    closeForm();buildNav();render();
-    toast(`${fmt(valorNovo)} ${acaoTxt}${quitado?'. Lançamento quitado! ✓':`. Pendente: ${fmt(novoSaldoPend)}.`}`,'ok');
+    closeParcialModal();closeForm();buildNav();render();
+    toast(quitado?`Lançamento quitado ✓ (${fmt(novoTotalPago)} ${acaoTxt})`:`${fmt(totalNovo)} ${acaoTxt}. Pendente: ${fmt(saldoApos)}.`,'ok');
   }catch(e){
     setSyncStatus('err','Erro');
     toast('Erro: '+e.message,'err');
-    if(btn){btn.disabled=false;btn.textContent='💾 Salvar Lançamento';}
+    if(btn){btn.disabled=false;btn.textContent='◐ Confirmar pagamento';}
   }
 }
 
