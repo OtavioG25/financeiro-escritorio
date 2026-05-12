@@ -4216,13 +4216,20 @@ function renderRelPreview(){
     const venMismatch=match&&rel.vencimento&&match.dataPgto&&rel.vencimento.slice(0,7)!==match.dataPgto.slice(0,7);
     const pVal=Number(match?.valorLiq)||0;const relBase=rel.valorRec-rel.juros;
     const valMismatch=match&&pVal>0&&Math.abs(pVal-relBase)/pVal>0.05;
+    // Pagamento parcial: cliente pagou menos que o lançamento
+    const isPartial=match&&pVal>0&&relBase>0&&relBase<pVal*0.95;
+    const restante=isPartial?pVal-relBase:0;
     const jurosTag=rel.juros>0?`<span style="font-size:10px;background:color-mix(in srgb,var(--orange) 18%,transparent);color:var(--orange);padding:1px 6px;border-radius:10px;margin-left:5px">+${fmt(rel.juros)} juros</span>`:'';
     const descLine=rel.desc&&rel.desc!==rel.clientName?`<div style="font-size:11.5px;color:var(--tx2);margin-top:1px">${rel.desc}</div>`:'';
+    const partialNote=isPartial?`<div style="margin-top:4px;padding:4px 8px;border-radius:4px;background:color-mix(in srgb,var(--orange) 12%,transparent);font-size:11px;color:var(--orange)">
+      Pagamento parcial: <b>${fmt(relBase)}</b> recebido de <b>${fmt(pVal)}</b> — sera criado novo lancamento pendente de <b>${fmt(restante)}</b>
+    </div>`:'';
     const relBlock=`<div style="border-radius:5px;padding:5px 8px;margin-bottom:3px;background:color-mix(in srgb,var(--blue) 7%,transparent);border-left:2px solid var(--blue)">
       <div style="font-size:9.5px;font-weight:700;color:var(--blue);letter-spacing:.4px;margin-bottom:2px">RELATORIO DOMINIO</div>
       <div style="font-size:12.5px;font-weight:600;color:var(--tx)">${rel.clientName||'(sem nome)'}</div>
       ${descLine}
       <div style="font-size:11px;color:var(--tx2);margin-top:2px">Comp: <b>${rel.competencia?rel.competencia.slice(0,7):'?'}</b> | Venc: <b style="${venMismatch?'color:var(--red)':''}">${fmtD(rel.vencimento)}</b> | Rec: <b>${fmtD(rel.dataRec)}</b> | <b style="${valMismatch?'color:var(--orange)':''}">${fmt(rel.valorRec)}</b>${jurosTag}</div>
+      ${partialNote}
     </div>`;
     const sysBlock=match?`<div style="border-radius:5px;padding:5px 8px;background:color-mix(in srgb,var(--teal) 7%,transparent);border-left:2px solid var(--teal)">
       <div style="font-size:9.5px;font-weight:700;color:var(--teal);letter-spacing:.4px;margin-bottom:2px">LANCAMENTO NO SISTEMA</div>
@@ -4321,6 +4328,8 @@ async function confirmarBaixarRel(){
     const{rel,match}=item;
     try{
       const valorBase=rel.valorRec-rel.juros;
+      const pValOrig=Number(match.valorLiq)||Number(match.valorBruto)||0;
+      const isPartial=valorBase>0&&pValOrig>0&&valorBase<pValOrig*0.95;
       const updated={...match,
         status:'Recebido',
         dataPgto:rel.dataRec,
@@ -4330,6 +4339,24 @@ async function confirmarBaixarRel(){
       await dbUpdate(updated);
       const di=DATA.findIndex(d=>d.id===match.id);
       if(di>=0)DATA[di]={...DATA[di],status:'Recebido',dataPgto:rel.dataRec,valorLiq:updated.valorLiq,conta};
+      // Pagamento parcial: criar lançamento pendente com o restante
+      if(isPartial){
+        const restante=pValOrig-valorBase;
+        const remEntry={
+          tipo:'R',
+          dataComp:match.dataComp,
+          dataPgto:match.dataPgto,
+          desc:match.desc,
+          cat:match.cat,sub:match.sub,
+          valorBruto:restante,ded:0,valorLiq:restante,
+          forma:match.forma,
+          conta:match.conta,
+          status:'Pendente',
+          obs:`Saldo pagamento parcial (pago: ${fmt(valorBase)}, original: ${fmt(pValOrig)})`
+        };
+        const savedR=await dbInsert(remEntry);
+        if(savedR){DATA.unshift(fromRow({...toRow(remEntry),id:savedR.id||('rem-'+Date.now())}));}
+      }
       if(rel.juros>0){
         const jEntry={
           tipo:'R',dataComp:rel.competencia||rel.dataRec,dataPgto:rel.dataRec,
