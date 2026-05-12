@@ -4159,7 +4159,7 @@ function renderRelPreview(){
   }).join('');
 
   const section=(list,type,secId,label,color)=>!list.length?'':
-    `<tr id="${secId}"><td colspan="2" style="padding:6px 10px;font-size:11px;font-weight:700;color:${color};background:color-mix(in srgb,${color} 10%,transparent);position:sticky;top:37px;z-index:1">${label} (${list.length})</td></tr>${mkRows(list,type)}`;
+    `<tr id="${secId}"><td colspan="2" style="padding:6px 10px;font-size:11px;font-weight:700;color:${color};background:color-mix(in srgb,${color} 10%,transparent)">${label} (${list.length})</td></tr>${mkRows(list,type)}`;
 
   const total=REL_MATCHED.length+REL_UNCERTAIN.length+REL_NOT_FOUND.length;
   document.getElementById('rel-result').innerHTML=`
