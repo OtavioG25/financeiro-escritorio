@@ -311,7 +311,7 @@ input::placeholder{color:var(--tx3)}
   </div>
 </div>
 <script>
-const APP_VERSION = 'v2.5.74';
+const APP_VERSION = 'v2.5.75';
 const APP_DATE = '2026-05-06';
 
 // Preenche versão na tela
@@ -4182,7 +4182,13 @@ function relOpenManual(type,idx){
 
 function relManualFilter(val){
   if(REL_MANUAL_OPEN)REL_MANUAL_OPEN.filter=val;
+  const scroll=document.getElementById('rel-tbl-scroll');
+  const st=scroll?scroll.scrollTop:0;
   renderRelPreview();
+  // Devolve foco e cursor ao input após re-render
+  const inp=document.querySelector('#rel-tbl-scroll input[placeholder="Buscar por nome..."]');
+  if(inp){inp.focus();const l=val.length;inp.setSelectionRange(l,l);}
+  if(scroll)scroll.scrollTop=st;
 }
 
 function relSetManual(pendingId){
