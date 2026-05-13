@@ -318,7 +318,7 @@ input::placeholder{color:var(--tx3)}
   </div>
 </div>
 <script>
-const APP_VERSION = 'v2.5.83';
+const APP_VERSION = 'v2.5.84';
 const APP_DATE = '2026-05-12';
 
 // Preenche versão na tela
@@ -3363,7 +3363,14 @@ async function toggleStatus(id){
   try{
     await dbUpdate({...l,status:next});
     l.status=next;
-    buildNav();render();
+    // Atualiza badge in-place sem re-renderizar a tabela (evita scroll para o topo)
+    const row=document.getElementById(`lan-row-${id}`);
+    if(row){
+      const span=row.querySelector('td span[onclick]');
+      if(span){span.outerHTML=`<span onclick="toggleStatus('${id}')" style="cursor:pointer" title="Clique para alternar status">${badge(next)}</span>`;}
+    }
+    buildNav();
+    renderSaldoCards();
   }catch(e){toast('Erro ao atualizar status: '+e.message,'err');}
 }
 let toastTimeout;
