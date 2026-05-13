@@ -318,8 +318,8 @@ input::placeholder{color:var(--tx3)}
   </div>
 </div>
 <script>
-const APP_VERSION = 'v2.5.80';
-const APP_DATE = '2026-05-06';
+const APP_VERSION = 'v2.5.83';
+const APP_DATE = '2026-05-12';
 
 // Preenche versão na tela
 document.addEventListener('DOMContentLoaded',()=>{
@@ -349,7 +349,7 @@ const sbFetch=async(method,path,body=null)=>{
 };
 
 async function dbLoad(){return await sbFetch('GET',`${TABLE}?order=created_at.desc&select=*`);}
-async function dbInsert(item){const row=toRow(item);delete row.id;const res=await sbFetch('POST',TABLE,row);return Array.isArray(res)?res[0]:res;}
+async function dbInsert(item){const row=toRow(item);if(!row.id)row.id=crypto.randomUUID();const res=await sbFetch('POST',TABLE,row);return Array.isArray(res)?res[0]:res;}
 async function dbUpdate(item){await sbFetch('PATCH',`${TABLE}?id=eq.${item.id}`,toRow(item));}
 async function dbDelete(id){await sbFetch('DELETE',`${TABLE}?id=eq.${id}`);}
 
@@ -574,6 +574,8 @@ async function migrarProLabore(){
 
 function toRow(l){return{id:l.id,tipo:l.tipo,data_comp:l.dataComp||null,data_pgto:l.dataPgto||null,cat:l.cat,sub:l.sub||null,descricao:l.desc||null,cc:l.cc||null,forma:l.forma||null,conta:normalizeConta(l.conta)||null,doc:l.doc||null,valor_bruto:parseMoney(l.valorBruto),ded:parseMoney(l.ded),valor_liq:parseMoney(l.valorLiq),status:l.status,obs:l.obs||null};}
 function fromRow(r){return{id:r.id,tipo:r.tipo,dataComp:r.data_comp||'',dataPgto:r.data_pgto||'',cat:r.cat||'',sub:r.sub||'',desc:r.descricao||'',cc:r.cc||'',forma:r.forma||'PIX',conta:r.conta||'',doc:r.doc||'',valorBruto:r.valor_bruto||0,ded:r.ded||0,valorLiq:r.valor_liq||0,status:r.status||'Pendente',obs:r.obs||''};}
+function extractParcHist(obs){const m=(obs||'').match(/~~P:(\[[\s\S]*?\])~~/);try{return m?JSON.parse(m[1]):[]}catch{return[];}}
+function stripParcHist(obs){return(obs||'').replace(/\s*~~P:\[[\s\S]*?\]~~/,'').trim();}
 function fromRecorrente(r){return{id:r.id,desc:r.descricao,cat:r.cat,sub:r.sub||'',valor:r.valor,diaVenc:r.dia_venc||null,compOffset:typeof r.comp_offset==='number'?r.comp_offset:0,conta:r.conta||''};}
 function toRecorrenteRow(item){return{id:item.id,tipo:item.tipo,descricao:item.desc,cat:item.cat,sub:item.sub||null,valor:item.valor,dia_venc:item.diaVenc||null,comp_offset:typeof item.compOffset==='number'?item.compOffset:0,conta:item.conta||null};}
 
@@ -731,18 +733,22 @@ function calcFluxo(year){
   const m=Array.from({length:12},()=>({...base}));
 
   DATA.forEach(l=>{
-    if(!l.dataPgto||getY(l.dataPgto)!==year)return;
     if(l.status!=='Pago'&&l.status!=='Recebido'&&l.status!=='Parcial')return;
     if(!inclInvestimentos&&isInvestConta(l.conta))return;
     if((l.doc||'').startsWith('TRANSF#'))return;
-    const i=getM(l.dataPgto),v=parseMoney(l.valorLiq);
-    if(l.tipo==='R'){
-      const rc=recCats.find(c=>c.nome===l.cat);
-      const rslug='r_'+(rc?(rc.slug||slugify(rc.nome)):slugify(l.cat));
-      m[i][rslug]=(m[i][rslug]||0)+v;
+    const hist=extractParcHist(l.obs);
+    if(hist.length>0){
+      hist.forEach(p=>{
+        if(!p.d||getY(p.d)!==year)return;
+        const pi=getM(p.d),pv=+p.v||0;
+        if(l.tipo==='R'){const rc=recCats.find(c=>c.nome===l.cat);const rs='r_'+(rc?(rc.slug||slugify(rc.nome)):slugify(l.cat));m[pi][rs]=(m[pi][rs]||0)+pv;}
+        else{const sl='d_'+catSlug(l.cat);m[pi][sl]=(m[pi][sl]||0)+pv;}
+      });
     } else {
-      const slug='d_'+catSlug(l.cat);
-      m[i][slug]=(m[i][slug]||0)+v;
+      if(!l.dataPgto||getY(l.dataPgto)!==year)return;
+      const i=getM(l.dataPgto),v=parseMoney(l.valorLiq);
+      if(l.tipo==='R'){const rc=recCats.find(c=>c.nome===l.cat);const rslug='r_'+(rc?(rc.slug||slugify(rc.nome)):slugify(l.cat));m[i][rslug]=(m[i][rslug]||0)+v;}
+      else{const slug='d_'+catSlug(l.cat);m[i][slug]=(m[i][slug]||0)+v;}
     }
   });
 
@@ -2653,6 +2659,9 @@ async function confirmarParcialModal(){
     // Cria uma entrada "Recebido" para cada linha de pagamento
     const dataPrincipal=rows[rows.length-1].data; // data mais recente para o lançamento original
     const obsExtra=rows.map(r=>`${dateBR(r.data)} ${esc(r.conta)}: ${fmt(parseMoney(r.valor))}`).join(' + ');
+    const prevHist=extractParcHist(original.obs||'');
+    const newHist=[...prevHist,...rows.map(r=>({d:r.data,v:parseMoney(r.valor)}))];
+    const cleanObs=stripParcHist(original.obs||'');
     const updated={
       ...original,
       dataComp:canonicalComp,
@@ -2661,7 +2670,7 @@ async function confirmarParcialModal(){
       ded:0,
       valorLiq:novoTotalPago,
       status:novoStatus,
-      obs:[original.obs||'',`[${quitado?'Quitado':'Parcial'} ${obsExtra}]`].filter(Boolean).join(' ')
+      obs:[cleanObs,`[${quitado?'Quitado':'Parcial'} ${obsExtra}]`].filter(Boolean).join(' ')+`~~P:${JSON.stringify(newHist)}~~`
     };
     await dbUpdate(updated);
     const idx=DATA.findIndex(l=>l.id===original.id);
@@ -2671,6 +2680,7 @@ async function confirmarParcialModal(){
     if(rows.length>1){
       for(const r of rows){
         const sub={
+          id:newId(),
           tipo:original.tipo,
           dataComp:canonicalComp,
           dataPgto:r.data,
@@ -2682,7 +2692,9 @@ async function confirmarParcialModal(){
           status:original.tipo==='R'?'Recebido':'Pago',
           obs:`Receb. parcial vinculado a: ${original.desc||''} — ${dateBR(r.data)}`
         };
-        const saved=await dbInsert(sub);
+        const subRow=toRow(sub);
+        const res=await sbFetch('POST',TABLE,subRow);
+        const saved=Array.isArray(res)?res[0]:res;
         if(saved)DATA.unshift(fromRow(saved));
       }
     } else {
