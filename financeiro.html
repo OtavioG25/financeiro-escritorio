@@ -318,7 +318,7 @@ input::placeholder{color:var(--tx3)}
   </div>
 </div>
 <script>
-const APP_VERSION = 'v2.5.84';
+const APP_VERSION = 'v2.5.85';
 const APP_DATE = '2026-05-12';
 
 // Preenche versão na tela
@@ -1126,6 +1126,7 @@ function buildNav(){
 
 function updateTitle(){document.getElementById('page-ttl').textContent=TABS.find(t=>t.id===TAB)?.lbl||'';}
 function setYear(y){YEAR=parseInt(y);render();}
+function renderKeepScroll(){const c=document.getElementById('content');const st=c?c.scrollTop:0;render();if(c)c.scrollTop=st;}
 function render(){
   if(TAB==='pendentes')TAB='lancamentos';
   updateTitle();const c=document.getElementById('content');c.innerHTML='';
@@ -2169,7 +2170,7 @@ async function deleteSelectedLancamentos(){
   }
   selectedLanIds.clear();
   setSyncStatus('ok',`${DATA.length} registros`);
-  buildNav();render();
+  buildNav();renderKeepScroll();
   toast(`✓ ${ok} excluído(s)${err?` — ${err} erro(s)`:''}`,'err');
 }
 
@@ -2224,7 +2225,7 @@ async function applyBulkEditSelectedLancamentos(){
   if(btn){btn.disabled=false;btn.textContent='✓ Aplicar alterações';}
   selectedLanIds.clear();
   setSyncStatus(err?'err':'ok',err?`${err} erro(s)`:`${DATA.length} registros`);
-  buildNav();render();
+  buildNav();renderKeepScroll();
   toast(`✓ ${ok} lançamento(s) atualizado(s)${err?` — ${err} erro(s)`:''}` ,err?'err':'ok');
 }
 
@@ -2354,7 +2355,7 @@ async function baixarEmLote(){
     }catch(e){err++;console.error(e);}
   }
   setSyncStatus('ok',`${DATA.length} registros`);
-  buildNav();render();
+  buildNav();renderKeepScroll();
   toast(`✓ ${ok} baixado(s)${err?` — ${err} erro(s)`:''}!`,'ok');
 }
 
@@ -2376,7 +2377,7 @@ async function deletarEmLote(){
   }
   DATA=DATA.filter(l=>!ids.includes(l.id));
   setSyncStatus('ok',`${DATA.length} registros`);
-  buildNav();render();
+  buildNav();renderKeepScroll();
   toast(`✓ ${ok} excluído(s)${err?` — ${err} erro(s)`:''}!`,'err');
 }
 
@@ -2706,7 +2707,7 @@ async function confirmarParcialModal(){
     }
 
     setSyncStatus('ok',`${DATA.length} registros`);
-    closeParcialModal();closeForm();buildNav();render();
+    closeParcialModal();closeForm();buildNav();renderKeepScroll();
     toast(quitado?`Lançamento quitado ✓ (${fmt(novoTotalPago)} ${acaoTxt})`:`${fmt(totalNovo)} ${acaoTxt}. Pendente: ${fmt(saldoApos)}.`,'ok');
   }catch(e){
     setSyncStatus('err','Erro');
@@ -2775,7 +2776,7 @@ async function saveForm(){
       DATA.unshift({...je});
     }
 
-    setSyncStatus('ok',`${DATA.length} registros`);closeForm();buildNav();render();
+    setSyncStatus('ok',`${DATA.length} registros`);closeForm();buildNav();renderKeepScroll();
     toast(jurosCat?'2 lançamentos salvos! ✓':'Lançamento salvo! ✓','ok');
   }catch(e){setSyncStatus('err','Erro ao salvar');toast('Erro ao salvar: '+e.message,'err');if(btn){btn.disabled=false;btn.textContent='💾 Salvar Lançamento';}}
 }
@@ -2787,7 +2788,7 @@ async function duplicarLancamento(id){
   try{
     const res=await dbInsert(copia);
     DATA.unshift(res?fromRow(res):copia);
-    buildNav();render();
+    buildNav();renderKeepScroll();
     toast('Lançamento duplicado','ok');
   }catch(e){toast('Erro ao duplicar: '+e.message,'err');}
 }
@@ -2801,7 +2802,7 @@ async function deleteItem(id){
     await dbDelete(id);
     DATA=DATA.filter(x=>x.id!==id);
     setSyncStatus('ok',`${DATA.length} registros`);
-    buildNav();render();
+    buildNav();renderKeepScroll();
     toast(isTransf?'↔ Transferência excluída.':'Lançamento excluído.','err');
   }catch(e){setSyncStatus('err','Erro ao excluir');toast('Erro ao excluir: '+e.message,'err');}
 }
@@ -2871,7 +2872,7 @@ async function saveTransferencia(){
     DATA.unshift(fromRow(saved||rec));
     setSyncStatus('ok',`${DATA.length} registros`);
     closeTransfModal();
-    buildNav();render();
+    buildNav();renderKeepScroll();
     toast('↔ Transferência registrada!','ok');
   }catch(e){setSyncStatus('err','Erro');toast('Erro ao salvar: '+e.message,'err');}
 }
