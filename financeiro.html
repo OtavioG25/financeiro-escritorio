@@ -318,7 +318,7 @@ input::placeholder{color:var(--tx3)}
   </div>
 </div>
 <script>
-const APP_VERSION = 'v2.5.87';
+const APP_VERSION = 'v2.5.88';
 const APP_DATE = '2026-05-12';
 
 // Preenche versão na tela
@@ -667,7 +667,7 @@ function calcDRE(year){
   DATA.forEach(l=>{
     if(!l.dataComp||getY(l.dataComp)!==year||l.status==='Cancelado')return;
     // Parcial: reconhece receita cheia (valorBruto) no DRE — apenas parcialmente recebida no caixa
-    const v=l.status==='Parcial'?parseMoney(l.valorBruto):parseMoney(l.valorLiq);
+    const i=getM(l.dataComp),v=l.status==='Parcial'?parseMoney(l.valorBruto):parseMoney(l.valorLiq);
     if(l.tipo==='R'){
       const rc=recCats.find(c=>c.nome===l.cat);
       const rslug='r_'+(rc?(rc.slug||slugify(rc.nome)):slugify(l.cat));
