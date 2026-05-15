@@ -406,15 +406,6 @@ async function adicionarSubConsultoria(){
   }catch(e){alert('Erro: '+e.message);}
 }
 
-async function importarDespesasRecorrentes(){
-  const despesas=RECORRENTES_DESPESAS_SEED();
-  try{
-    for(let i=0;i<despesas.length;i+=50){await sbFetch('POST','recorrentes',despesas.slice(i,i+50).map(r=>toRecorrenteRow(r)));}
-    RECORRENTES_DESPESAS=despesas.map(r=>({id:r.id,desc:r.desc,cat:r.cat,sub:r.sub,valor:r.valor,dataVenc:''}));
-    render();
-    alert(`✓ ${despesas.length} despesas recorrentes importadas.`);
-  }catch(e){alert('Erro ao importar: '+e.message);}
-}
 
 async function criarCategoriasReembolso(){
   for(const tipo of ['R','D']){
@@ -509,53 +500,6 @@ async function importarReceitas01(){
     toast(`✓ ${lista.length} receitas importadas!`,'ok');
   }catch(e){setSyncStatus('err','Erro ao importar');toast('Erro: '+e.message,'err');}
 }
-
-function RECORRENTES_DESPESAS_SEED(){return[
-  {id:'dep_001',tipo:'D',desc:'Google Ads',cat:'Marketing/Comercial',sub:'Publicidade',valor:1000.00,diaVenc:10,compOffset:0},
-  {id:'dep_002',tipo:'D',desc:'Salário Patrick',cat:'Empregados',sub:'Salários',valor:1706.66,diaVenc:5,compOffset:-1},
-  {id:'dep_003',tipo:'D',desc:'Salário Kathleen',cat:'Empregados',sub:'Salários',valor:3191.42,diaVenc:5,compOffset:-1},
-  {id:'dep_004',tipo:'D',desc:'Salário Rafaela',cat:'Empregados',sub:'Salários',valor:510.97,diaVenc:5,compOffset:-1},
-  {id:'dep_005',tipo:'D',desc:'Salário Milena',cat:'Empregados',sub:'Salários',valor:1491.94,diaVenc:5,compOffset:-1},
-  {id:'dep_006',tipo:'D',desc:'Salário Ariana',cat:'Empregados',sub:'Salários',valor:2374.19,diaVenc:5,compOffset:-1},
-  {id:'dep_007',tipo:'D',desc:'Salário Ricardo',cat:'Empregados',sub:'Salários',valor:1577.19,diaVenc:5,compOffset:-1},
-  {id:'dep_008',tipo:'D',desc:'Pro-labore Otávio',cat:'Pro-labore/Retiradas',sub:'Pro-Labore/Retiradas',valor:1442.69,diaVenc:5,compOffset:-1},
-  {id:'dep_009',tipo:'D',desc:'Pro-labore Edenir',cat:'Pro-labore/Retiradas',sub:'Pro-Labore/Retiradas',valor:1442.69,diaVenc:5,compOffset:-1},
-  {id:'dep_010',tipo:'D',desc:'Pro-labore Paula',cat:'Pro-labore/Retiradas',sub:'Pro-Labore/Retiradas',valor:1442.69,diaVenc:5,compOffset:-1},
-  {id:'dep_011',tipo:'D',desc:'Retirada Otávio',cat:'Pro-labore/Retiradas',sub:'Pro-Labore/Retiradas',valor:6497.31,diaVenc:5,compOffset:-1},
-  {id:'dep_012',tipo:'D',desc:'Retirada Paula',cat:'Pro-labore/Retiradas',sub:'Pro-Labore/Retiradas',valor:5377.31,diaVenc:5,compOffset:-1},
-  {id:'dep_013',tipo:'D',desc:'Retirada Edenir',cat:'Pro-labore/Retiradas',sub:'Pro-Labore/Retiradas',valor:10357.31,diaVenc:5,compOffset:-1},
-  {id:'dep_014',tipo:'D',desc:'Microsoft 365 SND',cat:'Tecnologia',sub:'Sistemas',valor:610.33,diaVenc:10,compOffset:0},
-  {id:'dep_015',tipo:'D',desc:'Anuidade Cartão Sicoob',cat:'Despesas Financeiras',sub:'Tarifas',valor:3.20,diaVenc:1,compOffset:0},
-  {id:'dep_016',tipo:'D',desc:'RD Station',cat:'Marketing/Comercial',sub:'Publicidade',valor:66.00,diaVenc:1,compOffset:0},
-  {id:'dep_017',tipo:'D',desc:'Zapsign',cat:'Tecnologia',sub:'Sistemas',valor:39.90,diaVenc:1,compOffset:0},
-  {id:'dep_018',tipo:'D',desc:'Plataforma Cursos Contabilidade Facilitada 6/12',cat:'Investimentos',sub:'Cursos',valor:89.90,diaVenc:5,compOffset:0},
-  {id:'dep_019',tipo:'D',desc:'ChatGPT',cat:'Tecnologia',sub:'Sistemas',valor:107.93,diaVenc:1,compOffset:0},
-  {id:'dep_020',tipo:'D',desc:'Printi 05/06',cat:'Marketing/Comercial',sub:'Brindes',valor:566.27,diaVenc:5,compOffset:0},
-  {id:'dep_021',tipo:'D',desc:'Domínio Escritório',cat:'Tecnologia',sub:'Sistemas',valor:3096.50,diaVenc:10,compOffset:0},
-  {id:'dep_022',tipo:'D',desc:'Impressora',cat:'Investimentos',sub:'Computadores',valor:219.67,diaVenc:10,compOffset:0},
-  {id:'dep_023',tipo:'D',desc:'Condomínio',cat:'Despesas Administrativas',sub:'Condomínio',valor:195.03,diaVenc:10,compOffset:0},
-  {id:'dep_024',tipo:'D',desc:'SSParisi',cat:'Tecnologia',sub:'Sistemas',valor:269.90,diaVenc:10,compOffset:0},
-  {id:'dep_025',tipo:'D',desc:'Sindicont',cat:'Despesas Administrativas',sub:'Associações',valor:160.00,diaVenc:5,compOffset:0},
-  {id:'dep_026',tipo:'D',desc:'Limpeza Adriana',cat:'Despesas Administrativas',sub:'Limpeza',valor:150.00,diaVenc:10,compOffset:0},
-  {id:'dep_027',tipo:'D',desc:"Manutenção Filtro D'água",cat:'Despesas Administrativas',sub:'Seguros e Manutenções',valor:49.90,diaVenc:10,compOffset:0},
-  {id:'dep_028',tipo:'D',desc:'Gestão Ads Funew',cat:'Marketing/Comercial',sub:'Publicidade',valor:550.00,diaVenc:10,compOffset:0},
-  {id:'dep_029',tipo:'D',desc:'Celular Claro',cat:'Despesas Administrativas',sub:'Internet/Telefone',valor:57.70,diaVenc:10,compOffset:0},
-  {id:'dep_030',tipo:'D',desc:'Plano de Saúde Bradesco',cat:'Pro-labore/Retiradas',sub:'Pro-Labore/Retiradas',valor:3034.46,diaVenc:10,compOffset:0},
-  {id:'dep_031',tipo:'D',desc:'Systemar',cat:'Tecnologia',sub:'Sistemas',valor:503.25,diaVenc:10,compOffset:0},
-  {id:'dep_032',tipo:'D',desc:'DARF DCTFWeb - Empregados',cat:'Empregados',sub:'Salários',valor:851.04,diaVenc:20,compOffset:-1},
-  {id:'dep_033',tipo:'D',desc:'DARF DCTFWeb - Pro-labore',cat:'Pro-labore/Retiradas',sub:'INSS Pro-labore',valor:534.93,diaVenc:20,compOffset:-1},
-  {id:'dep_034',tipo:'D',desc:'FGTS',cat:'Empregados',sub:'FGTS',valor:862.98,diaVenc:7,compOffset:-1},
-  {id:'dep_035',tipo:'D',desc:'SIEG',cat:'Tecnologia',sub:'Sistemas',valor:822.67,diaVenc:10,compOffset:0},
-  {id:'dep_036',tipo:'D',desc:'Internet Claro',cat:'Despesas Administrativas',sub:'Internet/Telefone',valor:117.04,diaVenc:10,compOffset:0},
-  {id:'dep_037',tipo:'D',desc:'Algar',cat:'Despesas Administrativas',sub:'Internet/Telefone',valor:79.80,diaVenc:10,compOffset:0},
-  {id:'dep_038',tipo:'D',desc:'Simples Nacional',cat:'Impostos',sub:'Simples Nacional',valor:8983.55,diaVenc:20,compOffset:0},
-  {id:'dep_039',tipo:'D',desc:'Energia Elétrica',cat:'Despesas Administrativas',sub:'Energia',valor:831.89,diaVenc:10,compOffset:0},
-  {id:'dep_040',tipo:'D',desc:'Aluguel',cat:'Despesas Administrativas',sub:'Aluguel',valor:4387.11,diaVenc:5,compOffset:0},
-  {id:'dep_041',tipo:'D',desc:'SERPRO - Integra Contador',cat:'Tecnologia',sub:'Sistemas',valor:92.28,diaVenc:10,compOffset:0},
-  {id:'dep_042',tipo:'D',desc:'TIM',cat:'Despesas Administrativas',sub:'Internet/Telefone',valor:105.10,diaVenc:10,compOffset:0},
-  {id:'dep_043',tipo:'D',desc:'ECONET',cat:'Despesas Administrativas',sub:'Consultoria',valor:384.27,diaVenc:10,compOffset:0},
-  {id:'dep_044',tipo:'D',desc:'Vale Alimentação',cat:'Empregados',sub:'Benefícios',valor:1200.00,diaVenc:25,compOffset:0},
-];}
 
 async function migrarProLabore(){
   const DE='Pró-Labore', PARA='Pro-labores/Retiradas', SLUG=slugify(PARA);
@@ -1114,11 +1058,9 @@ async function seedRecorrentes(){
     {id:'rec_144',tipo:'R',desc:'WATZKO CONSTRUTORA LTDA',cat:'Receita de Serviços',sub:'Honorários Contábeis',valor:160.00},
     {id:'rec_145',tipo:'R',desc:'WATZKO INCORPORADORA LTDA',cat:'Receita de Serviços',sub:'Honorários Contábeis',valor:165.50},
   ];
-  const despesas=RECORRENTES_DESPESAS_SEED();
-  const todos=[...receitas,...despesas].map(r=>toRecorrenteRow(r));
+  const todos=receitas.map(r=>toRecorrenteRow(r));
   for(let i=0;i<todos.length;i+=50){await sbFetch('POST','recorrentes',todos.slice(i,i+50));}
   RECORRENTES_RECEITAS=receitas.map(r=>({id:r.id,desc:r.desc,cat:r.cat,sub:r.sub,valor:r.valor,dataVenc:''}));
-  RECORRENTES_DESPESAS=despesas.map(r=>({id:r.id,desc:r.desc,cat:r.cat,sub:r.sub,valor:r.valor,dataVenc:''}));
 }
 
 function buildNav(){
