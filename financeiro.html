@@ -333,6 +333,12 @@ window.addEventListener('popstate',e=>{
   buildNav();render();updateTitle();
 });
 
+let _lanResizeTimer;
+window.addEventListener('resize',()=>{
+  clearTimeout(_lanResizeTimer);
+  _lanResizeTimer=setTimeout(()=>{if(TAB==='lancamentos')fitLanColsToContainer();},150);
+});
+
 
 
 const SUPABASE_URL='https://rvymfrpugzwwgrcybwpk.supabase.co';
@@ -1470,24 +1476,50 @@ const LAN_COLS=[
   {id:'status',lbl:'Status',sort:'status',w:104,min:84},
   {id:'acoes',lbl:'',w:96,min:82}
 ];
+let lanColWidthsIsDefault=false;
 let lanColWidths=loadLanColWidths();
 
 function loadLanColWidths(){
   try{
     const stored=localStorage.getItem(LAN_COL_WIDTHS_KEY);
-    const parsed=stored?JSON.parse(stored):{};
-    return Object.fromEntries(LAN_COLS.map(c=>{
-      const saved=parseInt(parsed[c.id],10);
-      return [c.id,Math.max(c.min,Number.isFinite(saved)?saved:c.w)];
-    }));
+    const parsed=stored?JSON.parse(stored):null;
+    if(parsed){
+      lanColWidthsIsDefault=false;
+      return Object.fromEntries(LAN_COLS.map(c=>{
+        const saved=parseInt(parsed[c.id],10);
+        return [c.id,Math.max(c.min,Number.isFinite(saved)?saved:c.w)];
+      }));
+    }
+    lanColWidthsIsDefault=true;
+    return Object.fromEntries(LAN_COLS.map(c=>[c.id,c.w]));
   }catch(e){
+    lanColWidthsIsDefault=true;
     return Object.fromEntries(LAN_COLS.map(c=>[c.id,c.w]));
   }
 }
 
 function saveLanColWidths(){
+  lanColWidthsIsDefault=false;
   try{localStorage.setItem(LAN_COL_WIDTHS_KEY,JSON.stringify(lanColWidths));}
   catch(e){console.warn('Falha ao salvar larguras das colunas',e);}
+}
+
+function applyLanColWidthsToDOM(){
+  LAN_COLS.forEach(c=>{
+    document.querySelectorAll(`.lan-tbl.resizable col[data-col="${c.id}"],.lan-tbl.resizable th[data-col="${c.id}"]`).forEach(el=>el.style.width=lanColWidths[c.id]+'px');
+  });
+}
+
+function fitLanColsToContainer(){
+  const container=document.querySelector('.lan-scroll');if(!container)return;
+  const available=container.clientWidth;
+  const totalMin=LAN_COLS.reduce((s,c)=>s+c.min,0);
+  if(available<totalMin||available<10)return;
+  const currentTotal=LAN_COLS.reduce((s,c)=>s+(lanColWidths[c.id]||c.w),0);
+  if(Math.abs(currentTotal-available)<5)return;
+  const ratio=available/currentTotal;
+  LAN_COLS.forEach(c=>{lanColWidths[c.id]=Math.max(c.min,Math.round((lanColWidths[c.id]||c.w)*ratio));});
+  applyLanColWidthsToDOM();
 }
 
 function renderLanColgroup(){
@@ -1822,6 +1854,7 @@ function renderLancamentos(c){
   <div id="saldo-cards" style="margin-top:12px"></div>`;
 
   filterLanTbody();
+  if(lanColWidthsIsDefault)requestAnimationFrame(fitLanColsToContainer);
 }
 
 function sortPendentes(col){
