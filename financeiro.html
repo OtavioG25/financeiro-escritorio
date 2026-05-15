@@ -179,14 +179,14 @@ body.resizing-col{cursor:col-resize;user-select:none}
 .bo{background:rgba(255,140,0,.15);color:#ff8c00}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
 .modal{background:var(--s1);border:1px solid var(--bd2);border-radius:14px;width:100%;max-width:660px;max-height:92vh;overflow-y:auto;animation:su .2s ease}
-.modal.modal-lancamento{max-height:98vh;max-width:660px;overflow:hidden}
-.modal-lancamento .modal-hdr{padding:12px 22px 10px}
-.modal-lancamento .fgrid{gap:9px 12px;padding:12px 22px 14px}
+.modal.modal-lancamento{max-height:98vh;max-width:660px;overflow:hidden;display:flex;flex-direction:column}
+.modal-lancamento .modal-hdr{padding:12px 22px 10px;flex-shrink:0}
+.modal-lancamento .fgrid{gap:9px 12px;padding:12px 22px 8px;overflow-y:auto;flex:1;min-height:0}
+.modal-footer-btns{flex-shrink:0;padding:10px 22px 16px;border-top:1px solid var(--bd)}
 .modal-lancamento .fl{font-size:11px;margin-bottom:2px}
 .modal-lancamento input[type=text],.modal-lancamento input[type=number],.modal-lancamento input[type=date],.modal-lancamento input[type=month],.modal-lancamento select,.modal-lancamento textarea{padding:6px 9px;font-size:12.5px}
 .modal-lancamento .tb{padding:7px;font-size:12.5px}
 .modal-lancamento textarea{height:38px;min-height:38px;resize:vertical}
-.modal-lancamento .fa{padding-top:2px}
 @keyframes su{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 .modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:18px 22px 14px;border-bottom:1px solid var(--bd)}
 .modal-hdr h2{font-size:16px;font-weight:700}
@@ -303,7 +303,7 @@ input::placeholder{color:var(--tx3)}
   </div>
 </div>
 <div class="overlay" id="overlay" style="display:none">
-  <div class="modal modal-lancamento"><div class="modal-hdr"><h2 id="modal-ttl">Novo Lançamento</h2><button class="cls" onclick="closeForm()">✕</button></div><div class="fgrid" id="fgrid"></div></div>
+  <div class="modal modal-lancamento"><div class="modal-hdr"><h2 id="modal-ttl">Novo Lançamento</h2><button class="cls" onclick="closeForm()">✕</button></div><div class="fgrid" id="fgrid"></div><div class="fa modal-footer-btns" id="modal-footer"></div></div>
 </div>
 <div class="overlay" id="parcial-overlay" style="display:none" onclick="if(event.target===this)closeParcialModal()">
   <div class="modal" style="max-width:580px">
@@ -2252,10 +2252,9 @@ function buildForm(){
     <div><div class="fl">Conta Bancária</div><select id="f-conta" onchange="formData.conta=this.value">${CONTAS.map(c=>`<option value="${esc(c)}"${formData.conta===c?' selected':''}>${esc(c)}</option>`).join('')}</select></div>
     <div><div class="fl">Nº Doc / NF</div><input type="text" value="${esc(formData.doc)}" oninput="formData.doc=this.value"/></div>
     <div style="grid-column:span 2"><div class="fl">Observações</div><textarea rows="1" oninput="formData.obs=this.value">${esc(formData.obs)}</textarea></div>
-    <div style="grid-column:span 2" class="fa">
-      ${editingId&&(formData.status==='Pendente'||formData.status==='Parcial')?`<button class="btn btn-ghost" style="margin-right:auto;color:#ff8c00;border-color:rgba(255,140,0,.35)" onclick="baixarParcial()">◐ ${formData.status==='Parcial'?'Registrar complemento':'Baixa parcial'}</button>`:''}
-      <button class="btn btn-ghost" onclick="closeForm()">Cancelar</button><button class="btn btn-pri" id="save-btn" onclick="saveForm()">💾 Salvar Lançamento</button>
-    </div>`;
+    `;
+  const footer=document.getElementById('modal-footer');
+  if(footer)footer.innerHTML=`${editingId&&(formData.status==='Pendente'||formData.status==='Parcial')?`<button class="btn btn-ghost" style="margin-right:auto;color:#ff8c00;border-color:rgba(255,140,0,.35)" onclick="baixarParcial()">◐ ${formData.status==='Parcial'?'Registrar complemento':'Baixa parcial'}</button>`:''}<button class="btn btn-ghost" onclick="closeForm()">Cancelar</button><button class="btn btn-pri" id="save-btn" onclick="saveForm()">💾 Salvar Lançamento</button>`;
 }
 
 function setFormTipo(t){formData.tipo=t;formData.cat='';formData.sub='';buildForm();}
