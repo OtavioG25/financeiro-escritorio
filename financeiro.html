@@ -438,69 +438,6 @@ async function limparReceitas01(){
   }catch(e){setSyncStatus('err','Erro');toast('Erro: '+e.message,'err');}
 }
 
-async function importarReceitas01(){
-  if(!CATS_DATA.R?.length){toast('Categorias não carregadas. Recarregue a página.','err');return;}
-  // Resolve cat+sub dinamicamente: busca em CATS_DATA.R pelo nome da subcategoria
-  function findCatSub(subNome){
-    for(const cat of CATS_DATA.R){
-      const sub=(cat.subs||[]).find(s=>s.nome===subNome);
-      if(sub)return{cat:cat.nome,sub:sub.nome};
-    }
-    return null;
-  }
-  // Para cada TIPO da planilha: tenta o nome direto como sub, depois fallbacks, depois primeiro disponível
-  const FALLBACKS={'Consultoria':['Consultoria Tributária'],'IRPF':['Assessoria Fiscal'],'Baixa de Empresas':['Abertura de Empresas']};
-  function resolveCatSub(tipoNome){
-    const direct=findCatSub(tipoNome);if(direct)return direct;
-    for(const fb of FALLBACKS[tipoNome]||[]){const f=findCatSub(fb);if(f)return f;}
-    const def=findCatSub('Outros Serviços');if(def)return def;
-    const fc=CATS_DATA.R[0];return{cat:fc.nome,sub:(fc.subs||[])[0]?.nome||''};
-  }
-  console.log('Categorias R disponíveis:',CATS_DATA.R.map(c=>`${c.nome}:[${(c.subs||[]).map(s=>s.nome).join(',')}]`).join(' | '));
-  const COMP_MAP={jan:'01',fev:'02',mar:'03',abr:'04',mai:'05',jun:'06',jul:'07',ago:'08',set:'09',out:'10',nov:'11',dez:'12'};
-  function parseDataBR(d){const[dd,mm,yy]=d.split('/');return`20${yy}-${mm}-${dd}`;}
-  function parseComp(c){const[m,y]=c.split('/');return`20${y}-${COMP_MAP[m]}-01`;}
-  const raw=[
-    {data:'20/01/26',desc:'Alteração Contratual Carla Nutripoint',comp:'jan/26',tipo:'Alterção Contratual',valor:1250.00},
-    {data:'20/01/26',desc:'Alvarás Olivaldo 01 de 02',comp:'jan/26',tipo:'Emissão Alvarás',valor:225.00},
-    {data:'05/01/26',desc:'Baixa Jennifer e Vulczak 02 de 03',comp:'nov/25',tipo:'Baixa de Empresas',valor:1193.33},
-    {data:'30/01/26',desc:'Baixa Jennifer e Vulczak 03 de 03',comp:'nov/25',tipo:'Baixa de Empresas',valor:1193.33},
-    {data:'07/01/26',desc:'Atendimento Erick Marques',comp:'jan/26',tipo:'Consultoria',valor:100.00},
-    {data:'29/01/26',desc:'Reunião Consultoria Sol Miranda',comp:'jan/26',tipo:'Consultoria',valor:200.00},
-    {data:'05/01/26',desc:'Declaração MEI Rosito',comp:'jan/26',tipo:'Declaração MEI',valor:80.00},
-    {data:'05/01/26',desc:'Emissão NF Ana Claudia',comp:'jan/26',tipo:'Emissão NFs',valor:50.00},
-    {data:'06/01/26',desc:'Emissão NFs Raphael Dias',comp:'jan/26',tipo:'Emissão NFs',valor:150.00},
-    {data:'15/01/26',desc:'Emissão NF Ana Claudia',comp:'jan/26',tipo:'Emissão NFs',valor:50.00},
-    {data:'16/01/26',desc:'Emissão NF Sergistonio',comp:'jan/26',tipo:'Emissão NFs',valor:50.00},
-    {data:'26/01/26',desc:'PIX emissão NF Ana Claudia',comp:'jan/26',tipo:'Emissão NFs',valor:50.00},
-    {data:'07/01/26',desc:'PIX Bruno Oliveira',comp:'jan/26',tipo:'IRPF',valor:100.00},
-    {data:'20/01/26',desc:'Malha Fiscal IRPF',comp:'jan/26',tipo:'IRPF',valor:250.00},
-    {data:'06/01/26',desc:'Emissão Certidão Carmen',comp:'jan/26',tipo:'Outros Serviços',valor:50.00},
-    {data:'19/01/26',desc:'Parcelamento Juliana Jurck',comp:'jan/26',tipo:'Parcelamentos',valor:100.00},
-    {data:'09/01/26',desc:'PIX Regularização Marcio Silva 01 de 02',comp:'jan/26',tipo:'Regularizações',valor:125.00},
-    {data:'13/01/26',desc:'PIX Regularização Victor Daniel',comp:'jan/26',tipo:'Regularizações',valor:160.00},
-    {data:'15/01/26',desc:'PIX Regularização Natalia Moraes 01 de 02',comp:'jan/26',tipo:'Regularizações',valor:190.00},
-    {data:'16/01/26',desc:'Regularização Elza Maria 02 de 02',comp:'jan/26',tipo:'Regularizações',valor:250.00},
-    {data:'20/01/26',desc:'Regularização Arthur 01 de 02',comp:'jan/26',tipo:'Regularizações',valor:125.00},
-    {data:'20/01/26',desc:'Regularização Diversos',comp:'dez/25',tipo:'Regularizações',valor:225.00},
-    {data:'22/01/26',desc:'Regulariação MEI Janaina Paz 01 de 02',comp:'jan/26',tipo:'Regularizações',valor:120.00},
-    {data:'23/01/26',desc:'PIX Regularização Marcio Silva 02 de 02',comp:'jan/26',tipo:'Regularizações',valor:205.00},
-    {data:'27/01/26',desc:'PIX regularização Grazziolo Sol',comp:'jan/26',tipo:'Regularizações',valor:100.00},
-    {data:'27/01/26',desc:'PIX Levantamento Francisco Ferreira',comp:'jan/26',tipo:'Regularizações',valor:100.00},
-    {data:'27/01/26',desc:'PIX Regularização Natalia de Moraes 02 de 02',comp:'jan/26',tipo:'Regularizações',valor:290.00},
-    {data:'29/01/26',desc:'Regularização CNPJ Comercial Sua Casa Alceo 01 de 02',comp:'jan/26',tipo:'Regularizações',valor:600.00},
-  ];
-  const lista=raw.map(r=>{const cs=resolveCatSub(r.tipo);return{id:newId(),tipo:'R',dataComp:parseComp(r.comp),dataPgto:parseDataBR(r.data),cat:cs.cat,sub:cs.sub,desc:r.desc,cc:'',forma:'',conta:'',doc:'',valorBruto:r.valor,ded:0,valorLiq:r.valor,status:'Recebido',obs:''};});
-  setSyncStatus('loading',`Importando ${lista.length} receitas...`);
-  try{
-    for(let i=0;i<lista.length;i+=50){await sbFetch('POST',TABLE,lista.slice(i,i+50).map(toRow));}
-    lista.forEach(l=>DATA.unshift(l));
-    setSyncStatus('ok',`${DATA.length} registros`);
-    buildNav();render();
-    toast(`✓ ${lista.length} receitas importadas!`,'ok');
-  }catch(e){setSyncStatus('err','Erro ao importar');toast('Erro: '+e.message,'err');}
-}
-
 async function migrarProLabore(){
   const DE='Pró-Labore', PARA='Pro-labores/Retiradas', SLUG=slugify(PARA);
   try{
