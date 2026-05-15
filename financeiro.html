@@ -348,7 +348,15 @@ const sbFetch=async(method,path,body=null)=>{
   const txt=await r.text();return txt?JSON.parse(txt):null;
 };
 
-async function dbLoad(){return await sbFetch('GET',`${TABLE}?order=created_at.desc&select=*`);}
+async function dbLoad(){
+  const PAGE=1000;let all=[],offset=0,chunk;
+  do{
+    chunk=await sbFetch('GET',`${TABLE}?order=created_at.desc&select=*&limit=${PAGE}&offset=${offset}`);
+    if(!chunk||!chunk.length)break;
+    all=all.concat(chunk);offset+=PAGE;
+  }while(chunk.length===PAGE);
+  return all;
+}
 async function dbInsert(item){const row=toRow(item);if(!row.id)row.id=crypto.randomUUID();const res=await sbFetch('POST',TABLE,row);return Array.isArray(res)?res[0]:res;}
 async function dbUpdate(item){await sbFetch('PATCH',`${TABLE}?id=eq.${item.id}`,toRow(item));}
 async function dbDelete(id){await sbFetch('DELETE',`${TABLE}?id=eq.${id}`);}
