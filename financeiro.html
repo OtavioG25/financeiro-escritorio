@@ -145,7 +145,7 @@ table{width:100%;border-collapse:collapse}
 .lan-tbl.resizable td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lan-tbl.resizable .dc{max-width:none}
 .fin-tbl.resizable{table-layout:fixed;width:max-content;min-width:100%}
-.fin-tbl.resizable th{position:sticky;top:0;overflow:hidden;text-overflow:ellipsis;min-width:unset!important}
+.fin-tbl.resizable th{position:sticky;top:0;z-index:2;background:var(--s1);overflow:hidden;text-overflow:ellipsis;min-width:unset!important}
 .fin-tbl.resizable th:first-child{min-width:unset!important;text-align:left}
 .fin-tbl.resizable td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lan-th{position:relative;overflow:hidden;text-overflow:ellipsis}
@@ -303,7 +303,7 @@ input::placeholder{color:var(--tx3)}
   </div>
 </div>
 <div class="overlay" id="overlay" style="display:none">
-  <div class="modal modal-lancamento"><div class="modal-hdr"><h2 id="modal-ttl">Novo Lançamento</h2><button class="cls" onclick="closeForm()">✕</button></div><div class="fgrid" id="fgrid"></div><div class="fa modal-footer-btns" id="modal-footer"></div></div>
+  <div class="modal modal-lancamento"><div class="modal-hdr"><div style="display:flex;align-items:center;gap:10px"><h2 id="modal-ttl">Novo Lançamento</h2><span id="modal-seq" style="font-size:12px;font-weight:600;color:var(--tx2);background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:2px 8px;display:none"></span></div><button class="cls" onclick="closeForm()">✕</button></div><div class="fgrid" id="fgrid"></div><div class="fa modal-footer-btns" id="modal-footer"></div></div>
 </div>
 <div class="overlay" id="parcial-overlay" style="display:none" onclick="if(event.target===this)closeParcialModal()">
   <div class="modal" style="max-width:580px">
@@ -468,7 +468,7 @@ async function migrarProLabore(){
 }
 
 function toRow(l){return{id:l.id,tipo:l.tipo,data_comp:l.dataComp||null,data_pgto:l.dataPgto||null,cat:l.cat,sub:l.sub||null,descricao:l.desc||null,cc:l.cc||null,forma:l.forma||null,conta:normalizeConta(l.conta)||null,doc:l.doc||null,valor_bruto:parseMoney(l.valorBruto),ded:parseMoney(l.ded),valor_liq:parseMoney(l.valorLiq),status:l.status,obs:l.obs||null};}
-function fromRow(r){return{id:r.id,tipo:r.tipo,dataComp:r.data_comp||'',dataPgto:r.data_pgto||'',cat:r.cat||'',sub:r.sub||'',desc:r.descricao||'',cc:r.cc||'',forma:r.forma||'PIX',conta:r.conta||'',doc:r.doc||'',valorBruto:r.valor_bruto||0,ded:r.ded||0,valorLiq:r.valor_liq||0,status:r.status||'Pendente',obs:r.obs||''};}
+function fromRow(r){return{id:r.id,seq:r.seq||null,tipo:r.tipo,dataComp:r.data_comp||'',dataPgto:r.data_pgto||'',cat:r.cat||'',sub:r.sub||'',desc:r.descricao||'',cc:r.cc||'',forma:r.forma||'PIX',conta:r.conta||'',doc:r.doc||'',valorBruto:r.valor_bruto||0,ded:r.ded||0,valorLiq:r.valor_liq||0,status:r.status||'Pendente',obs:r.obs||''};}
 function extractParcHist(obs){const m=(obs||'').match(/~~P:(\[[\s\S]*?\])~~/);try{return m?JSON.parse(m[1]):[]}catch{return[];}}
 function stripParcHist(obs){return(obs||'').replace(/\s*~~P:\[[\s\S]*?\]~~/,'').trim();}
 function fromRecorrente(r){return{id:r.id,desc:r.descricao,cat:r.cat,sub:r.sub||'',valor:r.valor,diaVenc:r.dia_venc||null,compOffset:typeof r.comp_offset==='number'?r.comp_offset:0,conta:r.conta||''};}
@@ -533,6 +533,11 @@ function getRecCats(){return (CATS_DATA.R||[]).sort((a,b)=>a.ordem-b.ordem);}
 // Categorias excluídas do DRE (aparecem apenas no Fluxo de Caixa)
 const EXCL_DRE_SLUGS = new Set(['reembolso','transferencia']);
 function isExclDRE(cat){ return EXCL_DRE_SLUGS.has(cat.slug||slugify(cat.nome)) || !!cat.excluir_dre; }
+function dreCatSlug(cat){return cat.slug||slugify(cat.nome);}
+function isNaoOpDRE(cat){
+  const slug=dreCatSlug(cat);
+  return (cat.fluxo||'operacional')==='nao_operacional'||slug==='outras_receitas'||slug.includes('reembols');
+}
 
 // Categoria especial de receita financeira
 function isRecFinCat(nome){
@@ -587,34 +592,34 @@ function calcDRE(year){
   const PESSOAL_SLUG      = 'pessoal';
   const IMPOSTOS_SLUG     = 'impostos_e_taxas';
   const EXCL_DESP_SLUGS   = [PESSOAL_SLUG, IMPOSTOS_SLUG];
+  const recOpCats = recCats.filter(c=>!isNaoOpDRE(c));
+  const recNaoOpCats = recCats.filter(c=>isNaoOpDRE(c));
+  const despOpCatsForCalc = despCats.filter(c=>!isNaoOpDRE(c));
+  const despNaoOpCats = despCats.filter(c=>isNaoOpDRE(c));
 
   m.forEach(r=>{
-    // Receitas operacionais (exceto Financeira e Outras)
-    const recFinCat = recCats.find(c=>(c.slug||slugify(c.nome))==='receita_financeira');
-    const outrasCat = recCats.find(c=>(c.slug||slugify(c.nome))==='outras_receitas');
-    const recFinVal = recFinCat ? (r['r_'+(recFinCat.slug||slugify(recFinCat.nome))]||0) : 0;
-    const outrasVal = outrasCat ? (r['r_'+(outrasCat.slug||slugify(outrasCat.nome))]||0) : 0;
-    r.recOpBruta = recCats.reduce((s,c)=>s+(r['r_'+(c.slug||slugify(c.nome))]||0),0) - recFinVal - outrasVal;
+    r.recOpBruta = recOpCats.reduce((s,c)=>s+(r['r_'+dreCatSlug(c)]||0),0);
     // Impostos
-    const impostoCat = despCats.find(c=>(c.slug||slugify(c.nome))===IMPOSTOS_SLUG);
-    r.impostos  = impostoCat ? (r['d_'+(impostoCat.slug||slugify(impostoCat.nome))]||0) : 0;
+    const impostoCat = despOpCatsForCalc.find(c=>dreCatSlug(c)===IMPOSTOS_SLUG);
+    r.impostos  = impostoCat ? (r['d_'+dreCatSlug(impostoCat)]||0) : 0;
     r.custosOp  = 0;
     r.recOpLiq  = r.recOpBruta - r.impostos;
     // Custo pessoal
-    const pessoalCat = despCats.find(c=>(c.slug||slugify(c.nome))===PESSOAL_SLUG);
-    r.cusPessoal = pessoalCat ? (r['d_'+(pessoalCat.slug||slugify(pessoalCat.nome))]||0) : 0;
+    const pessoalCat = despOpCatsForCalc.find(c=>dreCatSlug(c)===PESSOAL_SLUG);
+    r.cusPessoal = pessoalCat ? (r['d_'+dreCatSlug(pessoalCat)]||0) : 0;
     r.lucOpBruto = r.recOpLiq - r.cusPessoal;
     // Despesas operacionais (todas as categorias exceto Pessoal e Impostos e Taxas)
-    r.despOp = despCats.filter(c=>!EXCL_DESP_SLUGS.includes(c.slug||slugify(c.nome))).reduce((s,c)=>s+(r['d_'+(c.slug||slugify(c.nome))]||0),0);
+    r.despOp = despOpCatsForCalc.filter(c=>!EXCL_DESP_SLUGS.includes(dreCatSlug(c))).reduce((s,c)=>s+(r['d_'+dreCatSlug(c)]||0),0);
     r.resOp  = r.lucOpBruto - r.despOp;
     r.investimentos = 0;
-    r.recFin        = recFinVal;
-    r.outrasRec     = outrasVal;
+    r.recFin        = 0;
+    r.outrasRec     = recNaoOpCats.reduce((s,c)=>s+(r['r_'+dreCatSlug(c)]||0),0);
+    r.despNaoOp     = despNaoOpCats.reduce((s,c)=>s+(r['d_'+dreCatSlug(c)]||0),0);
     r.doacoes       = 0;
     // Totais gerais
-    r.totRec  = r.recOpBruta + recFinVal + outrasVal;
+    r.totRec  = r.recOpBruta + r.outrasRec;
     r.totDesp = despCats.reduce((s,c)=>s+(r['d_'+(c.slug||slugify(c.nome))]||0),0);
-    r.ll      = r.resOp + r.recFin + r.outrasRec;
+    r.ll      = r.resOp + r.outrasRec - r.despNaoOp;
   });
   return m;
 }
@@ -629,7 +634,6 @@ function calcFluxo(year){
 
   DATA.forEach(l=>{
     if(l.status!=='Pago'&&l.status!=='Recebido'&&l.status!=='Parcial')return;
-    if(!inclInvestimentos&&isInvestConta(l.conta))return;
     if((l.doc||'').startsWith('TRANSF#'))return;
     const hist=extractParcHist(l.obs);
     if(hist.length>0){
@@ -653,12 +657,23 @@ function calcFluxo(year){
     r.saldoOp=r.entradas-r.totSaidas;
     r.saldoIni=i===0?0:m[i-1].saldoFin;
     r.saldoFin=r.saldoIni+r.saldoOp;
+    r.entradasOp=recCats.filter(c=>(c.fluxo||'operacional')!=='nao_operacional').reduce((s,c)=>s+(r['r_'+(c.slug||slugify(c.nome))]||0),0);
+    r.saidasOp=despCats.filter(c=>(c.fluxo||'operacional')!=='nao_operacional').reduce((s,c)=>s+(r['d_'+(c.slug||slugify(c.nome))]||0),0);
+    r.resultadoOp=r.entradasOp-r.saidasOp;
+    r.entradasNaoOp=recCats.filter(c=>(c.fluxo||'operacional')==='nao_operacional').reduce((s,c)=>s+(r['r_'+(c.slug||slugify(c.nome))]||0),0);
+    r.saidasNaoOp=despCats.filter(c=>(c.fluxo||'operacional')==='nao_operacional').reduce((s,c)=>s+(r['d_'+(c.slug||slugify(c.nome))]||0),0);
+    r.resultadoNaoOp=r.entradasNaoOp-r.saidasNaoOp;
   });
   return m;
 }
 
 const FORMAS=['PIX','TED','Boleto','Cartão Crédito','Cartão Débito','Dinheiro','Cheque'];
 const STATUS=['Pago','Recebido','Pendente','Parcial','Cancelado'];
+const FILTER_STATUS=[
+  {value:'Pendente',label:'Pendente'},
+  {value:'Parcial',label:'Parcial'},
+  {value:'Realizado',label:'Recebido/Pago'}
+];
 let CONTAS=[];
 let CONTAS_DATA=[];
 const MONTHS=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -890,12 +905,16 @@ function calcExtrato(){
   const conta=filterExtratoConta;
   const contaObj=CONTAS_DATA.find(c=>c.nome===conta);
   const saldoIni=parseFloat(contaObj?.saldo_inicial)||0;
-  const prePeriod=DATA.filter(l=>
+  const transfCredits=DATA
+    .filter(l=>(l.doc||'').startsWith('TRANSF#')&&(l.obs||'').startsWith('TRANSF_DEST:')&&l.obs.slice(12)===conta&&!DATA.some(cr=>cr.doc===l.doc&&cr.conta===conta&&cr.tipo==='R'))
+    .map(l=>({...l,tipo:'R',conta}));
+  const allItems=[...DATA,...transfCredits];
+  const prePeriod=allItems.filter(l=>
     l.conta===conta&&(l.status==='Pago'||l.status==='Recebido'||l.status==='Parcial')&&
     l.dataPgto&&(!filterExtratoInicio||l.dataPgto<filterExtratoInicio)
   );
   const saldoAntes=saldoIni+prePeriod.reduce((s,l)=>s+(l.tipo==='R'?l.valorLiq:-l.valorLiq),0);
-  let items=DATA.filter(l=>{
+  let items=allItems.filter(l=>{
     if(l.conta!==conta||!l.dataPgto||l.status==='Cancelado')return false;
     if(!filterExtratoInclPend&&l.status==='Pendente')return false;
     if(filterExtratoInicio&&l.dataPgto<filterExtratoInicio)return false;
@@ -924,7 +943,9 @@ function calcExtrato(){
 function sortExtratoBy(col){
   if(sortExtrato.col===col){sortExtrato.dir=sortExtrato.dir==='asc'?'desc':'asc';}
   else{sortExtrato.col=col;sortExtrato.dir='asc';}
-  renderExtrato(document.getElementById('content'));
+  const c=document.getElementById('content');const ts=c.querySelector('.tbl-scroll');const st=ts?ts.scrollTop:0;
+  renderExtrato(c);
+  if(st>0)requestAnimationFrame(()=>{const el=document.getElementById('content').querySelector('.tbl-scroll');if(el)el.scrollTop=st;});
 }
 
 function clearExtratoSelectionState(){
@@ -998,9 +1019,9 @@ function renderExtrato(c){
     <div class="fg"><select onchange="clearExtratoSelectionState();filterExtratoConta=this.value;renderExtrato(document.getElementById('content'))">
       ${CONTAS_DATA.map(ct=>`<option value="${esc(ct.nome)}"${filterExtratoConta===ct.nome?' selected':''}>${esc(ct.nome)}${ct.tipo==='investimento'?' (Invest.)':''}</option>`).join('')}
     </select></div>
-    <input type="date" value="${filterExtratoInicio}" style="${inp};width:148px" onblur="clearExtratoSelectionState();filterExtratoInicio=this.value;renderExtrato(document.getElementById('content'))" onchange="filterExtratoInicio=this.value"/>
+    <input id="extrato-ini" type="date" value="${filterExtratoInicio}" style="${inp};width:148px" onblur="if(event.relatedTarget?.id==='extrato-fim'){filterExtratoInicio=this.value;}else{clearExtratoSelectionState();filterExtratoInicio=this.value;renderExtrato(document.getElementById('content'));}" onchange="filterExtratoInicio=this.value"/>
     <span style="font-size:12px;color:var(--tx2);white-space:nowrap">até</span>
-    <input type="date" value="${filterExtratoFim}" style="${inp};width:148px" onblur="clearExtratoSelectionState();filterExtratoFim=this.value;renderExtrato(document.getElementById('content'))" onchange="filterExtratoFim=this.value"/>
+    <input id="extrato-fim" type="date" value="${filterExtratoFim}" style="${inp};width:148px" onblur="clearExtratoSelectionState();filterExtratoFim=this.value;renderExtrato(document.getElementById('content'))" onchange="filterExtratoFim=this.value"/>
     <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx2);cursor:pointer;white-space:nowrap">
       <input type="checkbox" ${filterExtratoInclPend?'checked':''} onchange="clearExtratoSelectionState();filterExtratoInclPend=this.checked;renderExtrato(document.getElementById('content'))" style="width:14px;height:14px"/>
       Incluir pendentes
@@ -1252,16 +1273,16 @@ function renderDRE(c){
     return html;
   }
 
-  // Receitas operacionais (exceto financeiras e outras)
-  const recFinCat  = recCats.find(c=>(c.slug||slugify(c.nome))==='receita_financeira');
-  const outrasCat  = recCats.find(c=>(c.slug||slugify(c.nome))==='outras_receitas');
-  const recOpCats  = recCats.filter(c=>c!==recFinCat&&c!==outrasCat);
+  const recOpCats    = recCats.filter(c=>!isNaoOpDRE(c));
+  const recNaoOpCats = recCats.filter(c=>isNaoOpDRE(c));
 
   // Grupos de despesas — dinâmico: Pessoal e Impostos e Taxas têm seções próprias, resto vai em Despesas Operacionais
-  const impostoCat  = despCats.find(c=>(c.slug||slugify(c.nome))==='impostos_e_taxas');
-  const pessoalCat  = despCats.find(c=>(c.slug||slugify(c.nome))==='pessoal');
+  const despOpBase   = despCats.filter(c=>!isNaoOpDRE(c));
+  const despNaoOpCats= despCats.filter(c=>isNaoOpDRE(c));
+  const impostoCat  = despOpBase.find(c=>(c.slug||slugify(c.nome))==='impostos_e_taxas');
+  const pessoalCat  = despOpBase.find(c=>(c.slug||slugify(c.nome))==='pessoal');
   const EXCL_SLUGS  = ['pessoal','impostos_e_taxas'];
-  const despOpCats  = despCats.filter(c=>!EXCL_SLUGS.includes(c.slug||slugify(c.nome)));
+  const despOpCats  = despOpBase.filter(c=>!EXCL_SLUGS.includes(c.slug||slugify(c.nome)));
 
   const g=(cat,tipo)=>cat?groupRows(cat,tipo):'';
 
@@ -1291,8 +1312,8 @@ function renderDRE(c){
         ${despOpCats.length?`${row('DESPESAS OPERACIONAIS','','sep')}${despOpCats.map(cat=>g(cat,'D')).join('')}${row('(=) DESPESAS OPERACIONAIS','despOp','total')}`:''}
         ${row('(=) RESULTADO OPERACIONAL','resOp','result')}
 
-        ${recFinCat?`${row('RECEITAS FINANCEIRAS','','sep')}${groupRows(recFinCat,'R')}`:''}
-        ${outrasCat?`${row('OUTRAS RECEITAS','','sep')}${groupRows(outrasCat,'R')}`:''}
+        ${recNaoOpCats.length?`${row('RECEITAS NÃO OPERACIONAIS','','sep')}${recNaoOpCats.map(cat=>groupRows(cat,'R')).join('')}${row('(=) RECEITAS NÃO OPERACIONAIS','outrasRec','total')}`:''}
+        ${despNaoOpCats.length?`${row('DESPESAS NÃO OPERACIONAIS','','sep')}${despNaoOpCats.map(cat=>groupRows(cat,'D')).join('')}${row('(=) DESPESAS NÃO OPERACIONAIS','despNaoOp','total')}`:''}
 
         ${row('RESULTADO FINAL','ll','lucro')}
       </tbody>
@@ -1331,39 +1352,38 @@ function renderFluxo(c){
   const despCats=getDespCats();
   const tot=k=>f.reduce((s,m)=>s+(m[k]||0),0);
 
-  function row(lbl,k,bold,indent,cls=''){
-    const cells=f.map(m=>`<td class="${(m[k]||0)<0?'neg':'pos'}">${fmt(m[k]||0)}</td>`).join('');
-    const tv=tot(k);
+  function row(lbl,k,bold,indent,cls='',neg=false){
+    const cells=f.map(m=>{const v=(neg?-1:1)*(m[k]||0);return`<td class="${v<0?'neg':'pos'}">${fmt(v)}</td>`;}).join('');
+    const tv=(neg?-1:1)*tot(k);
     return`<tr class="dr${bold?' bold':''} ${cls}"><td style="padding-left:${indent?28:12}px">${lbl}</td>${cells}<td class="${tv<0?'neg':'pos'} tc">${fmt(tv)}</td></tr>`;
   }
   const sep=lbl=>`<tr class="sep"><td colspan="14">${lbl}</td></tr>`;
 
-  const entradasRows=recCats.filter(cat=>(cat.slug||slugify(cat.nome))!==TRANSF_SLUG).map(cat=>{
-    const k='r_'+(cat.slug||slugify(cat.nome));
-    return row(cat.nome,k,false,true);
-  }).join('');
-
-  const saidasRows=despCats.filter(cat=>(cat.slug||slugify(cat.nome))!==TRANSF_SLUG).map(cat=>{
-    const k='d_'+(cat.slug||slugify(cat.nome));
-    return row(cat.nome,k,false,true);
-  }).join('');
+  const recCatsVis=recCats.filter(cat=>(cat.slug||slugify(cat.nome))!==TRANSF_SLUG);
+  const despCatsVis=despCats.filter(cat=>(cat.slug||slugify(cat.nome))!==TRANSF_SLUG);
+  const entradasOpRows=recCatsVis.filter(c=>(c.fluxo||'operacional')!=='nao_operacional').map(cat=>row(cat.nome,'r_'+(cat.slug||slugify(cat.nome)),false,true)).join('');
+  const saidasOpRows=despCatsVis.filter(c=>(c.fluxo||'operacional')!=='nao_operacional').map(cat=>row(cat.nome,'d_'+(cat.slug||slugify(cat.nome)),false,true,'',true)).join('');
+  const entradasNaoOpRows=recCatsVis.filter(c=>(c.fluxo||'operacional')==='nao_operacional').map(cat=>row(cat.nome,'r_'+(cat.slug||slugify(cat.nome)),false,true)).join('');
+  const saidasNaoOpRows=despCatsVis.filter(c=>(c.fluxo||'operacional')==='nao_operacional').map(cat=>row(cat.nome,'d_'+(cat.slug||slugify(cat.nome)),false,true,'',true)).join('');
+  const hasNaoOp=recCatsVis.some(c=>(c.fluxo||'operacional')==='nao_operacional')||despCatsVis.some(c=>(c.fluxo||'operacional')==='nao_operacional');
 
   // Per-account saldo calculation
-  const paidData=DATA.filter(l=>(l.status==='Pago'||l.status==='Recebido')&&l.dataPgto&&getY(l.dataPgto)===YEAR&&(inclInvestimentos||!isInvestConta(l.conta)));
+  const paidData=DATA.filter(l=>(l.status==='Pago'||l.status==='Recebido')&&l.dataPgto&&getY(l.dataPgto)===YEAR);
   const contaFlows={};
   paidData.forEach(l=>{const c=l.conta||'(Sem conta)';if(!contaFlows[c])contaFlows[c]=Array(12).fill(0);});
   // Include destination accounts from new-style single-record transfers
   paidData.filter(l=>(l.doc||'').startsWith('TRANSF#')&&(l.obs||'').startsWith('TRANSF_DEST:')).forEach(l=>{
     const dest=l.obs.slice(12);if(dest&&!contaFlows[dest])contaFlows[dest]=Array(12).fill(0);
   });
-  const contaSet=[...new Set(Object.keys(contaFlows))].sort();
+  const contaOrder=CONTAS_DATA.map(c=>c.nome);
+  const contaSet=[...new Set(Object.keys(contaFlows))].sort((a,b)=>{const ia=contaOrder.indexOf(a),ib=contaOrder.indexOf(b);if(ia<0&&ib<0)return a.localeCompare(b);if(ia<0)return 1;if(ib<0)return -1;return ia-ib;});
   paidData.forEach(l=>{
     const i=getM(l.dataPgto),v=parseMoney(l.valorLiq);
     const conta=l.conta||'(Sem conta)';
     contaFlows[conta][i]+=(l.tipo==='R'?v:-v);
     // New-style transfer: also credit destination account
     if((l.doc||'').startsWith('TRANSF#')&&(l.obs||'').startsWith('TRANSF_DEST:')){
-      const dest=l.obs.slice(12);if(dest)contaFlows[dest][i]+=v;
+      const dest=l.obs.slice(12);if(dest&&!paidData.some(cr=>cr.doc===l.doc&&cr.conta===dest&&cr.tipo==='R'))contaFlows[dest][i]+=v;
     }
   });
   const contaRows=contaSet.map(conta=>{
@@ -1396,7 +1416,7 @@ function renderFluxo(c){
       if(l.status!=='Pendente')return false;
       const d=l.dataPgto||l.dataComp;
       return d&&getY(d)===YEAR;
-    }).filter(l=>inclInvestimentos||!isInvestConta(l.conta));
+    });
     const projEnt=Array(12).fill(0);
     const projSai=Array(12).fill(0);
     pendData.forEach(l=>{
@@ -1421,18 +1441,26 @@ function renderFluxo(c){
     ${mkRow('Saldo Final Projetado',projSaldoFin,true,'proj-tot')}`;
   }
 
-  c.innerHTML=`<div class="tbl-wrap"><div class="tbl-hdr" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px"><div class="sec-ttl">Fluxo de Caixa — Regime de Caixa <span class="yr-pill">${YEAR}</span></div><div style="display:flex;gap:6px"><button class="btn btn-ghost" style="font-size:12px;${showFluxoProj?'border-color:#58a6ff;color:#58a6ff':''}" onclick="toggleFluxoProj()">📊 ${showFluxoProj?'Ocultar projetado':'Fluxo Projetado'}</button><button class="btn btn-ghost" style="font-size:12px" onclick="toggleInclInvest()">💼 ${inclInvestimentos?'Ocultar investimentos':'Incluir investimentos'}</button></div></div>
-    <div class="tbl-scroll"><table class="fin-tbl resizable">${renderFinColgroup()}<thead>${renderFinHead()}</thead><tbody>
-    ${sep('ENTRADAS')}
-    ${entradasRows}
-    ${row('TOTAL ENTRADAS','entradas',true,false,'hl')}
-    ${sep('SAÍDAS')}
-    ${saidasRows}
-    ${row('TOTAL SAÍDAS','totSaidas',true,false)}
+  c.innerHTML=`<div class="tbl-wrap"><div class="tbl-hdr" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px"><div class="sec-ttl">Fluxo de Caixa — Regime de Caixa <span class="yr-pill">${YEAR}</span></div><div style="display:flex;gap:6px"><button class="btn btn-ghost" style="font-size:12px;${showFluxoProj?'border-color:#58a6ff;color:#58a6ff':''}" onclick="toggleFluxoProj()">📊 ${showFluxoProj?'Ocultar projetado':'Fluxo Projetado'}</button></div></div>
+    <div class="tbl-scroll" style="max-height:calc(100vh - 190px);overflow-y:auto"><table class="fin-tbl resizable">${renderFinColgroup()}<thead>${renderFinHead()}</thead><tbody>
+    ${sep('FLUXO OPERACIONAL')}
+    <tr class="sep"><td colspan="14" style="padding-left:28px;font-size:9px;color:var(--tx3)">ENTRADAS</td></tr>
+    ${entradasOpRows}
+    ${row('TOTAL ENTRADAS OPERACIONAIS','entradasOp',true,false,'hl')}
+    <tr class="sep"><td colspan="14" style="padding-left:28px;font-size:9px;color:var(--tx3)">SAÍDAS</td></tr>
+    ${saidasOpRows}
+    ${row('TOTAL SAÍDAS OPERACIONAIS','saidasOp',true,false,'',true)}
+    ${row('(=) RESULTADO OPERACIONAL','resultadoOp',true,false,'tot')}
+    ${hasNaoOp?`
+    ${sep('NÃO-OPERACIONAL')}
+    ${entradasNaoOpRows}
+    ${saidasNaoOpRows}
+    ${row('(=) RESULTADO NÃO-OPERACIONAL','resultadoNaoOp',true,false,'tot')}
+    `:''}
     ${sep('SALDOS')}
+    ${row('VARIAÇÃO TOTAL DE CAIXA','saldoOp',true,false,'tot')}
     <tr class="sep"><td colspan="14" style="padding-left:28px;font-size:9px;color:var(--tx3)">VARIAÇÃO NO PERÍODO</td></tr>
     ${contaRows}
-    ${row('RESULTADO TOTAL','saldoOp',true,false,'tot')}
     <tr class="sep"><td colspan="14" style="padding-left:28px;font-size:9px;color:var(--blue)">SALDO FINAL POR CONTA</td></tr>
     ${contaSaldoFinRows}
     ${totalSaldoFinRow}
@@ -1440,19 +1468,12 @@ function renderFluxo(c){
     </tbody></table></div></div>`;
 }
 
-let filterTipo='',filterStatus='',filterBusca='',filterComp='',filterConta='',filterCat='',filterSub='';
+let filterTipo='',filterStatus='',filterBusca='',filterComp='',filterConta='',filterCat='',filterSub='',filterPgtoIni='',filterPgtoFim='';
 let filterPendBusca='',filterPendTipo='';
 let filterRecBusca='';
-let inclInvestimentos=localStorage.getItem('financeiro_incl_invest')==='1';
 let showFluxoProj=localStorage.getItem('financeiro_fluxo_proj')==='1';
 let filterExtratoConta='',filterExtratoInicio='',filterExtratoFim='',filterExtratoInclPend=false;
 let selectedExtratoIds = new Set();
-function isInvestConta(nome){return CONTAS_DATA.find(c=>c.nome===nome)?.tipo==='investimento';}
-function toggleInclInvest(){
-  inclInvestimentos=!inclInvestimentos;
-  localStorage.setItem('financeiro_incl_invest',inclInvestimentos?'1':'0');
-  render();
-}
 function toggleFluxoProj(){
   showFluxoProj=!showFluxoProj;
   localStorage.setItem('financeiro_fluxo_proj',showFluxoProj?'1':'0');
@@ -1465,6 +1486,7 @@ let selectedLanIds = new Set();
 const LAN_COL_WIDTHS_KEY='financeiro_lancamentos_col_widths';
 const LAN_COLS=[
   {id:'sel',w:42,min:38},
+  {id:'seq',lbl:'Nº',sort:'seq',w:58,min:46},
   {id:'tipo',lbl:'Tipo',w:84,min:70},
   {id:'dataPgto',lbl:'Pagamento',sort:'dataPgto',w:112,min:92},
   {id:'dataComp',lbl:'Competência',sort:'dataComp',w:112,min:92},
@@ -1670,7 +1692,9 @@ function thSort(lbl, col, sortObj, renderFn){
 function sortLancamentos(col){
   if(sortLan.col===col)sortLan.dir=sortLan.dir==='asc'?'desc':'asc';
   else{sortLan.col=col;sortLan.dir='desc';}
+  const ls=document.querySelector('.lan-scroll');const st=ls?ls.scrollTop:0;
   renderLancamentos(document.getElementById('content'));
+  if(st>0)requestAnimationFrame(()=>{const el=document.querySelector('.lan-scroll');if(el)el.scrollTop=st;});
 }
 
 function applyLanFilter(){renderLancamentos(document.getElementById('content'));}
@@ -1700,10 +1724,13 @@ function filterLanTbody(){
     if(filterTipo==='T'){if(!isTransfEntry)return false;}
     else if(filterTipo){if(l.tipo!==filterTipo||isTransfEntry)return false;}
     if(filterStatus){
-      // "Pendente" no filtro inclui Parcial (ambos têm saldo a receber)
-      const match=filterStatus==='Pendente'?(l.status==='Pendente'||l.status==='Parcial'):l.status===filterStatus;
+      const match=filterStatus==='Realizado'
+        ? (l.tipo==='R'?l.status==='Recebido':l.tipo==='D'?l.status==='Pago':(l.status==='Recebido'||l.status==='Pago'))
+        : l.status===filterStatus;
       if(!match)return false;
     }
+    if(filterPgtoIni&&(l.dataPgto||'')<filterPgtoIni)return false;
+    if(filterPgtoFim&&(l.dataPgto||'')>filterPgtoFim)return false;
     if(filterComp&&(l.dataComp||'').slice(0,7)!==filterComp)return false;
     if(filterConta&&(l.conta||'')!==filterConta)return false;
     if(filterCat&&l.cat!==filterCat)return false;
@@ -1724,6 +1751,7 @@ function filterLanTbody(){
     const tipoLbl=isTransf?'↔ Transf':l.tipo==='R'?'▲ Rec':'▼ Desp';
     return `<tr class="lr" id="lan-row-${l.id}">
       <td><input type="checkbox" class="lan-chk" value="${l.id}" ${checked} onchange="onLanCheck()" style="width:15px;height:15px;cursor:pointer"/></td>
+      <td onclick="openEdit('${l.id}')" style="color:var(--tx2);font-size:12px;text-align:center">${l.seq||'—'}</td>
       <td onclick="openEdit('${l.id}')"><span class="tp ${tipoCls}">${tipoLbl}</span></td>
       <td onclick="openEdit('${l.id}')">${dateBR(l.dataPgto)||'—'}</td>
       <td onclick="openEdit('${l.id}')">${compDisplay(l.dataComp)||'—'}</td>
@@ -1754,9 +1782,9 @@ function renderSaldoCards(){
       .reduce((s,l)=>s+(l.tipo==='R'?l.valorLiq:-l.valorLiq),0);
     const pendentes=lan.filter(l=>l.status==='Pendente')
       .reduce((s,l)=>s+(l.tipo==='R'?l.valorLiq:-l.valorLiq),0);
-    // Credits from new-style single-record transfers where this account is the destination
-    const transfCredReal=DATA.filter(l=>(l.doc||'').startsWith('TRANSF#')&&(l.obs||'').startsWith('TRANSF_DEST:')&&l.obs.slice(12)===conta.nome&&(l.status==='Pago'||l.status==='Recebido')).reduce((s,l)=>s+parseMoney(l.valorLiq),0);
-    const transfCredPend=DATA.filter(l=>(l.doc||'').startsWith('TRANSF#')&&(l.obs||'').startsWith('TRANSF_DEST:')&&l.obs.slice(12)===conta.nome&&l.status==='Pendente').reduce((s,l)=>s+parseMoney(l.valorLiq),0);
+    // Credits from legacy single-record transfers (skip if a real credit record already exists)
+    const transfCredReal=DATA.filter(l=>(l.doc||'').startsWith('TRANSF#')&&(l.obs||'').startsWith('TRANSF_DEST:')&&l.obs.slice(12)===conta.nome&&(l.status==='Pago'||l.status==='Recebido')&&!DATA.some(cr=>cr.doc===l.doc&&cr.conta===conta.nome&&cr.tipo==='R')).reduce((s,l)=>s+parseMoney(l.valorLiq),0);
+    const transfCredPend=DATA.filter(l=>(l.doc||'').startsWith('TRANSF#')&&(l.obs||'').startsWith('TRANSF_DEST:')&&l.obs.slice(12)===conta.nome&&l.status==='Pendente'&&!DATA.some(cr=>cr.doc===l.doc&&cr.conta===conta.nome&&cr.tipo==='R')).reduce((s,l)=>s+parseMoney(l.valorLiq),0);
     const atual=ini+realizados+transfCredReal;
     const projetado=atual+pendentes+transfCredPend;
     return{nome:conta.nome,atual,projetado};
@@ -1784,7 +1812,7 @@ function renderLancamentos(c){
   const catsDisp=filterTipo&&filterTipo!=='T'?(CATS_DATA[filterTipo]||[]):[...(CATS_DATA.R||[]),...(CATS_DATA.D||[])];
   const catObj=catsDisp.find(cat=>cat.nome===filterCat);
   const subsDisp=catObj?(catObj.subs||[]):[];
-  const anyAdv=filterComp||filterConta||filterCat||filterSub;
+  const anyAdv=filterComp||filterConta||filterCat||filterSub||filterPgtoIni||filterPgtoFim;
   c.innerHTML=`<div class="tbl-wrap"><div style="padding:14px 18px 0"><div class="toolbar"><div class="filters">
     <div class="fg">🔍<select onchange="filterTipo=this.value;filterCat='';filterSub='';applyLanFilter()">
       <option value="">Todos os tipos</option>
@@ -1794,9 +1822,15 @@ function renderLancamentos(c){
     </select></div>
     <div class="fg"><select onchange="filterStatus=this.value;applyLanFilter()">
       <option value="">Todos os status</option>
-      ${STATUS.map(s=>`<option value="${s}"${filterStatus===s?' selected':''}>${s}</option>`).join('')}
+      ${FILTER_STATUS.map(s=>`<option value="${s.value}"${filterStatus===s.value?' selected':''}>${s.label}</option>`).join('')}
     </select></div>
     <button class="btn ${filterStatus==='Pendente'?'btn-pri':'btn-ghost'}" style="font-size:12px;padding:5px 10px;white-space:nowrap" onclick="filterStatus=filterStatus==='Pendente'?'':'Pendente';applyLanFilter()">⏳ Pendentes</button>
+    <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
+      <span style="font-size:11px;color:var(--tx2);white-space:nowrap">Pgto</span>
+      <input id="lan-pgto-ini" type="date" value="${filterPgtoIni}" style="background:var(--s2);border:1px solid var(--bd2);border-radius:8px;color:var(--tx);padding:4px 7px;font-size:12px;outline:none;color-scheme:dark;width:136px" onblur="if(event.relatedTarget?.id==='lan-pgto-fim'){filterPgtoIni=this.value;}else{filterPgtoIni=this.value;applyLanFilter();}" onchange="filterPgtoIni=this.value"/>
+      <span style="font-size:11px;color:var(--tx2)">até</span>
+      <input id="lan-pgto-fim" type="date" value="${filterPgtoFim}" style="background:var(--s2);border:1px solid var(--bd2);border-radius:8px;color:var(--tx);padding:4px 7px;font-size:12px;outline:none;color-scheme:dark;width:136px" onblur="filterPgtoFim=this.value;applyLanFilter();" onchange="filterPgtoFim=this.value"/>
+    </div>
     <div class="fg"><select onchange="filterComp=this.value;applyLanFilter()">
       <option value="">Competência</option>
       ${compsDisp.map(v=>`<option value="${v}"${filterComp===v?' selected':''}>${compToView(v)}</option>`).join('')}
@@ -1814,7 +1848,7 @@ function renderLancamentos(c){
       ${subsDisp.map(s=>`<option value="${esc(s.nome)}"${filterSub===s.nome?' selected':''}>${esc(s.nome)}</option>`).join('')}
     </select></div>`:''}
     <input class="sinp" placeholder="Buscar..." value="${esc(filterBusca)}" oninput="filterBusca=this.value;filterLanTbody()"/>
-    ${anyAdv?`<button class="btn btn-ghost" style="font-size:12px;padding:5px 10px;white-space:nowrap" onclick="filterComp='';filterConta='';filterCat='';filterSub='';applyLanFilter()">✕ Limpar</button>`:''}
+    ${anyAdv?`<button class="btn btn-ghost" style="font-size:12px;padding:5px 10px;white-space:nowrap" onclick="filterComp='';filterConta='';filterCat='';filterSub='';filterPgtoIni='';filterPgtoFim='';applyLanFilter()">✕ Limpar</button>`:''}
   </div>
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <label style="display:flex;align-items:center;gap:6px;color:var(--tx2);font-size:12px;cursor:pointer">
@@ -2172,6 +2206,7 @@ function openForm(id=null){
     formData={id:newId(),tipo:'R',dataComp:'',dataCompView:'',dataPgto:'',cat:'',sub:'',desc:'',cc:'',forma:'PIX',conta:'Dominio Conta Digital',doc:'',valorBruto:'',ded:'',valorLiq:'',valorJuros:'',status:'Pendente',obs:''};
   }
   document.getElementById('modal-ttl').textContent=id?'Editar Lançamento':'Novo Lançamento';
+  const seqEl=document.getElementById('modal-seq');if(seqEl){const s=l?.seq;seqEl.textContent=s?`#${s}`:'';seqEl.style.display=s?'inline-block':'none';}
   buildForm();
   document.getElementById('overlay').style.display='flex';
 }
@@ -2184,7 +2219,14 @@ function renderContas(c){
       <div class="card-ttl">Contas Bancárias</div>
       <div style="margin-top:12px;display:grid;gap:10px" id="accounts-list">
         ${CONTAS_DATA.map((conta,idx)=>`
-          <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--bd);border-radius:12px;background:var(--s2)">
+          <div id="conta-row-${conta.id}" draggable="true"
+            ondragstart="onContaDragStart(event,${conta.id})"
+            ondragover="onContaDragOver(event,${conta.id})"
+            ondragleave="onContaDragLeave(event,${conta.id})"
+            ondrop="onContaDrop(event,${conta.id})"
+            ondragend="onContaDragEnd()"
+            style="display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--bd);border-radius:12px;background:var(--s2);cursor:grab;transition:opacity .15s">
+            <span style="color:var(--tx3);font-size:14px;margin-right:2px;cursor:grab">⠿</span>
             <span style="min-width:160px;font-weight:500">${esc(conta.nome)}</span>
             <span style="font-size:12px;color:var(--tx2);white-space:nowrap">Saldo inicial (R$)</span>
             <input type="text" id="si-${idx}" value="${conta.saldo_inicial?String(conta.saldo_inicial).replace('.',','):''}" placeholder="0,00" style="width:110px;background:var(--s1);border:1px solid var(--bd2);border-radius:8px;color:var(--tx);padding:5px 8px;font-size:13px;outline:none" onkeydown="if(event.key==='Enter')salvarSaldoIni(${conta.id},this.value)"/>
@@ -2199,6 +2241,29 @@ function renderContas(c){
       <button class="btn btn-pri" style="margin-top:16px" onclick="adicionarConta()">＋ Nova Conta</button>
     </div>
   `;
+}
+
+let _dragConta=null;
+function onContaDragStart(e,id){_dragConta=id;e.currentTarget.style.opacity='0.4';e.dataTransfer.effectAllowed='move';}
+function onContaDragOver(e,id){e.preventDefault();if(_dragConta&&_dragConta!==id)document.getElementById('conta-row-'+id)?.style.setProperty('border-color','var(--teal)');}
+function onContaDragLeave(e,id){document.getElementById('conta-row-'+id)?.style.setProperty('border-color','var(--bd)');}
+function onContaDragEnd(){document.querySelectorAll('[id^="conta-row-"]').forEach(el=>{el.style.opacity='';el.style.borderColor='';});}
+async function onContaDrop(e,targetId){
+  e.preventDefault();
+  onContaDragEnd();
+  if(!_dragConta||_dragConta===targetId){_dragConta=null;return;}
+  const fromIdx=CONTAS_DATA.findIndex(c=>c.id===_dragConta);
+  const toIdx=CONTAS_DATA.findIndex(c=>c.id===targetId);
+  if(fromIdx<0||toIdx<0){_dragConta=null;return;}
+  const [moved]=CONTAS_DATA.splice(fromIdx,1);
+  CONTAS_DATA.splice(toIdx,0,moved);
+  CONTAS_DATA.forEach((c,i)=>c.ordem=i);
+  _dragConta=null;
+  renderContas(document.getElementById('content'));
+  try{
+    await Promise.all(CONTAS_DATA.map(c=>sbFetch('PATCH',`contas?id=eq.${c.id}`,{ordem:c.ordem})));
+    toast('Ordem salva!','ok');
+  }catch(err){toast('Erro ao salvar ordem','err');}
 }
 
 async function adicionarConta(){
@@ -2532,20 +2597,20 @@ async function saveForm(){
   try{
     const exists=DATA.findIndex(x=>x.id===formData.id);
     if(exists>=0){await dbUpdate(formData);DATA[exists]={...formData};}
-    else{await dbInsert(formData);DATA.unshift({...formData});}
+    else{const saved=await dbInsert(formData);DATA.unshift(saved?fromRow(saved):{...formData});}
 
     if(jurosCat&&jurosSub){
       const je={
         id:newId(), tipo:formData.tipo,
-        dataComp:formData.dataComp, dataPgto:formData.dataPgto||'',
+        dataComp:formData.dataPgto?(formData.dataPgto.slice(0,7)+'-01'):formData.dataComp, dataPgto:formData.dataPgto||'',
         cat:jurosCat, sub:jurosSub,
         desc:(formData.desc?formData.desc+' — Juros/Multas':'Juros/Multas'),
         cc:formData.cc||'', forma:formData.forma||'PIX', conta:formData.conta,
         doc:formData.doc||'', valorBruto:valorJuros, ded:0, valorLiq:valorJuros,
         status:formData.status, obs:formData.obs||''
       };
-      await dbInsert(je);
-      DATA.unshift({...je});
+      const savedJe=await dbInsert(je);
+      DATA.unshift(savedJe?fromRow(savedJe):{...je});
     }
 
     setSyncStatus('ok',`${DATA.length} registros`);closeForm();buildNav();renderKeepScroll();
@@ -2581,11 +2646,13 @@ async function duplicarEEditar(id){
 async function deleteItem(id){
   const item=DATA.find(x=>x.id===id);
   const isTransf=(item?.doc||'').startsWith('TRANSF#');
-  if(!confirm(isTransf?'Excluir esta transferência?':'Excluir este lançamento?'))return;
+  if(!confirm(isTransf?'Excluir esta transferência (ambos os lançamentos)?':'Excluir este lançamento?'))return;
   setSyncStatus('loading','Excluindo...');
   try{
+    const pairIds=isTransf?DATA.filter(x=>x.doc===item.doc&&x.id!==id).map(x=>x.id):[];
     await dbDelete(id);
-    DATA=DATA.filter(x=>x.id!==id);
+    for(const pid of pairIds)await dbDelete(pid);
+    DATA=DATA.filter(x=>x.id!==id&&!pairIds.includes(x.id));
     setSyncStatus('ok',`${DATA.length} registros`);
     buildNav();renderKeepScroll();
     toast(isTransf?'↔ Transferência excluída.':'Lançamento excluído.','err');
@@ -2652,9 +2719,11 @@ async function saveTransferencia(){
     await ensureTransfCat();
     const ref='TRANSF#'+newId();
     const descFinal=desc||`Transferência: ${origem} → ${destino}`;
-    const rec={id:newId(),tipo:'D',dataComp:data,dataPgto:data,cat:TRANSF_CAT,sub:TRANSF_CAT,desc:descFinal,conta:origem,doc:ref,valorBruto:valor,ded:0,valorLiq:valor,status,obs:`TRANSF_DEST:${destino}`};
-    const saved=await dbInsert(rec);
-    DATA.unshift(fromRow(saved||rec));
+    const recD={id:newId(),tipo:'D',dataComp:data,dataPgto:data,cat:TRANSF_CAT,sub:TRANSF_CAT,desc:descFinal,conta:origem,doc:ref,valorBruto:valor,ded:0,valorLiq:valor,status,obs:`TRANSF_DEST:${destino}`};
+    const recR={id:newId(),tipo:'R',dataComp:data,dataPgto:data,cat:TRANSF_CAT,sub:TRANSF_CAT,desc:descFinal,conta:destino,doc:ref,valorBruto:valor,ded:0,valorLiq:valor,status,obs:`TRANSF_ORIG:${origem}`};
+    const [savedD,savedR]=await Promise.all([dbInsert(recD),dbInsert(recR)]);
+    DATA.unshift(fromRow(savedR||recR));
+    DATA.unshift(fromRow(savedD||recD));
     setSyncStatus('ok',`${DATA.length} registros`);
     closeTransfModal();
     buildNav();renderKeepScroll();
@@ -2668,6 +2737,8 @@ function openEditRecorrente(id){
   const item=RECORRENTES_DESPESAS.find(r=>r.id===id)||{id:newId(),desc:'',cat:'',sub:'',valor:0,diaVenc:null,compOffset:0,conta:''};
   recData={...item,tipo:'D'};
   document.getElementById('modal-ttl').textContent=id?'Editar Despesa Recorrente':'Nova Despesa Recorrente';
+  const seqEl=document.getElementById('modal-seq');if(seqEl){seqEl.textContent='';seqEl.style.display='none';}
+  const footer=document.getElementById('modal-footer');if(footer)footer.innerHTML='';
   buildFormRecorrente();
   document.getElementById('overlay').style.display='flex';
 }
@@ -2851,6 +2922,8 @@ function renderCategorias(c){
             const dreBtn=slugLocked
               ? `<span title="Excluído do DRE (sistema)" style="padding:2px 8px;font-size:10px;border-radius:99px;border:1px solid rgba(248,81,73,.3);background:rgba(248,81,73,.1);color:var(--red);opacity:.6;cursor:default">✕ DRE</span>`
               : `<button onclick="toggleExcluirDRE('${cat.id}',${excluido})" title="${excluido?'Excluído do DRE — clique para incluir':'Incluído no DRE — clique para excluir'}" style="padding:2px 8px;font-size:10px;border-radius:99px;cursor:pointer;border:1px solid ${excluido?'rgba(248,81,73,.3);background:rgba(248,81,73,.1);color:var(--red)':'rgba(57,211,83,.3);background:rgba(57,211,83,.1);color:var(--teal)'}">${excluido?'✕ DRE':'✓ DRE'}</button>`;
+            const naoOp=(cat.fluxo||'operacional')==='nao_operacional';
+            const fluxoBtn=`<button onclick="toggleFluxoCat('${cat.id}','${cat.fluxo||'operacional'}')" title="${naoOp?'Não-Operacional — clique para marcar como Operacional':'Operacional — clique para marcar como Não-Operacional'}" style="padding:2px 8px;font-size:10px;border-radius:99px;cursor:pointer;border:1px solid ${naoOp?'rgba(240,136,62,.3);background:rgba(240,136,62,.1);color:var(--orange)':'rgba(88,166,255,.3);background:rgba(88,166,255,.1);color:var(--blue)'}"> ${naoOp?'Não-Op.':'Op.'}</button>`;
             return `
             <div class="cat-card" id="cat-${cat.id}" draggable="true"
               ondragstart="onCatDragStart(event,'${cat.id}')"
@@ -2862,6 +2935,7 @@ function renderCategorias(c){
                   <span class="drag-handle">⠿</span>
                   <span style="font-size:14px;font-weight:600;color:var(--tx)">${esc(cat.nome)}</span>
                   ${dreBtn}
+                  ${fluxoBtn}
                   <button class="btn btn-ghost" style="padding:2px 7px;font-size:11px" onclick="editarCategoria('${cat.id}','${esc(cat.nome)}')">✏️</button>
                   <button class="btn" style="padding:2px 7px;font-size:11px;background:rgba(248,81,73,.1);color:var(--red);border:1px solid rgba(248,81,73,.2)" onclick="excluirCategoria('${cat.id}','${esc(cat.nome)}')">🗑️</button>
                 </div>
@@ -2901,6 +2975,8 @@ function renderCategorias(c){
             const dreBtn=slugLocked
               ? `<span title="Excluído do DRE (sistema)" style="padding:2px 8px;font-size:10px;border-radius:99px;border:1px solid rgba(248,81,73,.3);background:rgba(248,81,73,.1);color:var(--red);opacity:.6;cursor:default">✕ DRE</span>`
               : `<button onclick="toggleExcluirDRE('${cat.id}',${excluido})" title="${excluido?'Excluído do DRE — clique para incluir':'Incluído no DRE — clique para excluir'}" style="padding:2px 8px;font-size:10px;border-radius:99px;cursor:pointer;border:1px solid ${excluido?'rgba(248,81,73,.3);background:rgba(248,81,73,.1);color:var(--red)':'rgba(57,211,83,.3);background:rgba(57,211,83,.1);color:var(--teal)'}">${excluido?'✕ DRE':'✓ DRE'}</button>`;
+            const naoOp=(cat.fluxo||'operacional')==='nao_operacional';
+            const fluxoBtn=`<button onclick="toggleFluxoCat('${cat.id}','${cat.fluxo||'operacional'}')" title="${naoOp?'Não-Operacional — clique para marcar como Operacional':'Operacional — clique para marcar como Não-Operacional'}" style="padding:2px 8px;font-size:10px;border-radius:99px;cursor:pointer;border:1px solid ${naoOp?'rgba(240,136,62,.3);background:rgba(240,136,62,.1);color:var(--orange)':'rgba(88,166,255,.3);background:rgba(88,166,255,.1);color:var(--blue)'}"> ${naoOp?'Não-Op.':'Op.'}</button>`;
             return `
             <div class="cat-card" id="cat-${cat.id}" draggable="true"
               ondragstart="onCatDragStart(event,'${cat.id}')"
@@ -2912,6 +2988,7 @@ function renderCategorias(c){
                   <span class="drag-handle">⠿</span>
                   <span style="font-size:14px;font-weight:600;color:var(--tx)">${esc(cat.nome)}</span>
                   ${dreBtn}
+                  ${fluxoBtn}
                   <button class="btn btn-ghost" style="padding:2px 7px;font-size:11px" onclick="editarCategoria('${cat.id}','${esc(cat.nome)}')">✏️</button>
                   <button class="btn" style="padding:2px 7px;font-size:11px;background:rgba(248,81,73,.1);color:var(--red);border:1px solid rgba(248,81,73,.2)" onclick="excluirCategoria('${cat.id}','${esc(cat.nome)}')">🗑️</button>
                 </div>
@@ -3033,6 +3110,18 @@ async function toggleExcluirDRE(id, currentVal){
   }catch(e){setSyncStatus('err','Erro');toast('Erro ao salvar: '+e.message,'err');}
 }
 
+async function toggleFluxoCat(id, current){
+  const novo=current==='nao_operacional'?'operacional':'nao_operacional';
+  setSyncStatus('loading','Salvando...');
+  try{
+    await sbFetch('PATCH',`categorias?id=eq.${id}`,{fluxo:novo});
+    for(const tipo of ['R','D']){const cat=(CATS_DATA[tipo]||[]).find(c=>c.id===id);if(cat){cat.fluxo=novo;break;}}
+    setSyncStatus('ok',`${DATA.length} registros`);
+    renderCategorias(document.getElementById('content'));
+    toast(novo==='nao_operacional'?'Marcada como Não-Operacional':'Marcada como Operacional','ok');
+  }catch(e){setSyncStatus('err','Erro');toast('Erro ao salvar: '+e.message,'err');}
+}
+
 async function editarCategoria(id, nomeAtual){
   const novo=prompt('Novo nome:',nomeAtual);
   if(!novo||!novo.trim()||novo.trim()===nomeAtual)return;
@@ -3040,6 +3129,8 @@ async function editarCategoria(id, nomeAtual){
   setSyncStatus('loading','Salvando...');
   try{
     await sbFetch('PATCH',`categorias?id=eq.${id}`,{nome:n,slug:slugify(n)});
+    await sbFetch('PATCH',`lancamentos?cat=eq.${encodeURIComponent(nomeAtual)}`,{cat:n});
+    DATA.forEach(l=>{if(l.cat===nomeAtual)l.cat=n;});
     const cat=(CATS_DATA.R||[]).find(c=>c.id===id)||(CATS_DATA.D||[]).find(c=>c.id===id);
     if(cat){cat.nome=n;cat.slug=slugify(n);}
     rebuildCatsObj();
@@ -3093,12 +3184,19 @@ async function editarSub(id, nomeAtual){
   setSyncStatus('loading','Salvando...');
   try{
     await sbFetch('PATCH',`subcategorias?id=eq.${id}`,{nome:n,slug:slugify(n)});
+    let catNome=null;
     for(const tipo of ['R','D']){
       for(const cat of CATS_DATA[tipo]||[]){
         const sub=(cat.subs||[]).find(s=>s.id===id);
-        if(sub){sub.nome=n;sub.slug=slugify(n);break;}
+        if(sub){catNome=cat.nome;sub.nome=n;sub.slug=slugify(n);break;}
       }
+      if(catNome)break;
     }
+    const subFilter=catNome
+      ?`lancamentos?sub=eq.${encodeURIComponent(nomeAtual)}&cat=eq.${encodeURIComponent(catNome)}`
+      :`lancamentos?sub=eq.${encodeURIComponent(nomeAtual)}`;
+    await sbFetch('PATCH',subFilter,{sub:n});
+    DATA.forEach(l=>{if(l.sub===nomeAtual&&(!catNome||l.cat===catNome))l.sub=n;});
     rebuildCatsObj();
     setSyncStatus('ok',`${DATA.length} registros`);
     render();toast('Subcategoria atualizada!','ok');
