@@ -2254,7 +2254,7 @@ function buildForm(){
     <div style="grid-column:span 2"><div class="fl">Observações</div><textarea rows="1" oninput="formData.obs=this.value">${esc(formData.obs)}</textarea></div>
     `;
   const footer=document.getElementById('modal-footer');
-  if(footer)footer.innerHTML=`${editingId&&(formData.status==='Pendente'||formData.status==='Parcial')?`<button class="btn btn-ghost" style="margin-right:auto;color:#ff8c00;border-color:rgba(255,140,0,.35)" onclick="baixarParcial()">◐ ${formData.status==='Parcial'?'Registrar complemento':'Baixa parcial'}</button>`:''}<button class="btn btn-ghost" onclick="closeForm()">Cancelar</button><button class="btn btn-pri" id="save-btn" onclick="saveForm()">💾 Salvar Lançamento</button>`;
+  if(footer)footer.innerHTML=`${editingId&&(formData.status==='Pendente'||formData.status==='Parcial')?`<button class="btn btn-ghost" style="color:#ff8c00;border-color:rgba(255,140,0,.35)" onclick="baixarParcial()">◐ ${formData.status==='Parcial'?'Registrar complemento':'Baixa parcial'}</button>`:''}<span style="margin-right:auto"></span>${editingId?`<button class="btn btn-ghost" title="Duplicar lançamento" onclick="duplicarLancamento('${editingId}');closeForm()">⧉ Duplicar</button>`:''}<button class="btn btn-ghost" onclick="closeForm()">Cancelar</button><button class="btn btn-pri" id="save-btn" onclick="saveForm()">💾 Salvar Lançamento</button>`;
 }
 
 function setFormTipo(t){formData.tipo=t;formData.cat='';formData.sub='';buildForm();}
